@@ -1,0 +1,10 @@
+class {
+
+	function run( event, context, response ) {
+		return {
+			"message": "UserProfiles handling hyphenated URI",
+			"route": "user-profiles -> UserProfiles.bx",
+			"method": event.method ?: "GET"
+		};
+	}
+}

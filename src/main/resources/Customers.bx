@@ -1,0 +1,123 @@
+/**
+ * Customers API handler for BoxLang Google Cloud Functions
+ *
+ * Automatically loaded when the URI path starts with "/customers".
+ * Supports GET (list all / get one), POST (create), PUT (update), DELETE (delete).
+ *
+ * The event struct mirrors the AWS API Gateway v2.0 shape so this file works
+ * unchanged on the AWS runtime too.
+ */
+class {
+
+	/**
+	 * Main request dispatcher.
+	 *
+	 * @param event    The request event struct
+	 * @param context  The GCF context struct
+	 * @param response The mutable response struct
+	 */
+	function run( event, context, response ) {
+		var httpMethod = event.requestContext?.http?.method ?: event.method ?: "GET";
+
+		// RequestMapper does not populate pathParameters, so derive the optional
+		// numeric ID from the second segment of event.path (e.g. /customers/123).
+		var pathId    = "";
+		var pathParts = listToArray( event.path ?: "/", "/" );
+		if ( arrayLen( pathParts ) >= 2 && isNumeric( pathParts[ 2 ] ) ) {
+			pathId = pathParts[ 2 ];
+		}
+
+		switch ( httpMethod ) {
+			case "GET":
+				if ( len( pathId ) > 0 ) {
+					return getCustomer( pathId );
+				} else {
+					return getAllCustomers();
+				}
+				break;
+
+			case "POST":
+				return createCustomer( event.body );
+				break;
+
+			case "PUT":
+				if ( len( pathId ) > 0 ) {
+					return updateCustomer( pathId, event.body );
+				} else {
+					response.statusCode = 400;
+					return { "error": "Customer ID required for update" };
+				}
+				break;
+
+			case "DELETE":
+				if ( len( pathId ) > 0 ) {
+					return deleteCustomer( pathId );
+				} else {
+					response.statusCode = 400;
+					return { "error": "Customer ID required for deletion" };
+				}
+				break;
+
+			default:
+				response.statusCode = 405;
+				return { "error": "Method not allowed" };
+		}
+	}
+
+	private function getAllCustomers() {
+		return {
+			"message" : "Fetching all customers",
+			"data"    : [
+				{ "id": 1, "name": "Alice Johnson",  "email": "alice@example.com" },
+				{ "id": 2, "name": "Bob Smith",      "email": "bob@example.com"   },
+				{ "id": 3, "name": "Carol Williams", "email": "carol@example.com" }
+			],
+			"total"   : 3
+		};
+	}
+
+	private function getCustomer( id ) {
+		return {
+			"message" : "Fetching customer ##" & id,
+			"data"    : {
+				"id"      : id,
+				"name"    : "Customer " & id,
+				"email"   : "customer" & id & "@example.com",
+				"phone"   : "555-0" & id & "00",
+				"address" : id & " Main Street, Anytown, USA"
+			}
+		};
+	}
+
+	private function createCustomer( body ) {
+		return {
+			"message" : "Customer created successfully",
+			"data"    : {
+				"id"      : randRange( 1000, 9999 ),
+				"name"    : "New Customer",
+				"email"   : "newcustomer@example.com",
+				"created" : now()
+			}
+		};
+	}
+
+	private function updateCustomer( id, body ) {
+		return {
+			"message" : "Customer ##" & id & " updated successfully",
+			"data"    : {
+				"id"      : id,
+				"name"    : "Updated Customer " & id,
+				"email"   : "updated" & id & "@example.com",
+				"updated" : now()
+			}
+		};
+	}
+
+	private function deleteCustomer( id ) {
+		return {
+			"message"   : "Customer ##" & id & " deleted successfully",
+			"deletedId" : id,
+			"deletedAt" : now()
+		};
+	}
+}

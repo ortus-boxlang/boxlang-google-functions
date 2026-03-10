@@ -1,0 +1,31 @@
+/**
+ * Hello World — minimal BoxLang Google Cloud Function example
+ *
+ * Deploy this file as Lambda.bx alongside the boxlang-google-functions fat JAR.
+ * Set the GCF --entry-point to: ortus.boxlang.runtime.gcp.GcpFunctionRunner
+ *
+ * Example curl test (after local Functions Framework invocation):
+ *   curl http://localhost:8080/
+ */
+class {
+
+	/**
+	 * Default handler method.
+	 *
+	 * @param event    Struct — HTTP request data (method, path, headers, body, …)
+	 * @param context  Struct — GCF metadata (functionName, functionVersion, requestId, projectId)
+	 * @param response Struct — mutable response (statusCode, headers, body, cookies)
+	 */
+	function run( event, context, response ) {
+		response.statusCode              = 200;
+		response.headers["Content-Type"] = "application/json";
+
+		response.body = serializeJSON( {
+			"message"      : "Hello from BoxLang on Google Cloud Functions!",
+			"method"       : event.method,
+			"path"         : event.path,
+			"functionName" : context.functionName,
+			"requestId"    : context.requestId
+		} );
+	}
+}

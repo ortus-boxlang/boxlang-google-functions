@@ -1,0 +1,83 @@
+/**
+ * Products API handler for BoxLang Google Cloud Functions
+ *
+ * Automatically loaded when the URI path starts with "/products".
+ * Supports GET (list all / get one) and POST (create).
+ *
+ * The event struct mirrors the AWS API Gateway v2.0 shape so this file works
+ * unchanged on the AWS runtime too.
+ */
+class {
+
+	/**
+	 * Main request dispatcher.
+	 *
+	 * @param event    The request event struct
+	 * @param context  The GCF context struct
+	 * @param response The mutable response struct
+	 */
+	function run( event, context, response ) {
+		var httpMethod = event.requestContext?.http?.method ?: event.method ?: "GET";
+
+		// RequestMapper does not populate pathParameters, so derive the optional
+		// numeric ID from the second segment of event.path (e.g. /products/123).
+		var pathId    = "";
+		var pathParts = listToArray( event.path ?: "/", "/" );
+		if ( arrayLen( pathParts ) >= 2 && isNumeric( pathParts[ 2 ] ) ) {
+			pathId = pathParts[ 2 ];
+		}
+
+		switch ( httpMethod ) {
+			case "GET":
+				if ( len( pathId ) > 0 ) {
+					return getProduct( pathId );
+				} else {
+					return getAllProducts();
+				}
+				break;
+
+			case "POST":
+				return createProduct( event.body );
+				break;
+
+			default:
+				response.statusCode = 405;
+				return { "error": "Method not allowed" };
+		}
+	}
+
+	private function getAllProducts() {
+		return {
+			"message" : "Fetching all products",
+			"data"    : [
+				{ "id": 1, "name": "Widget A", "price": 19.99 },
+				{ "id": 2, "name": "Widget B", "price": 29.99 },
+				{ "id": 3, "name": "Gadget X", "price": 49.99 }
+			],
+			"total"   : 3
+		};
+	}
+
+	private function getProduct( id ) {
+		return {
+			"message" : "Fetching product ##" & id,
+			"data"    : {
+				"id"    : id,
+				"name"  : "Product " & id,
+				"price" : 29.99
+			}
+		};
+	}
+
+	private function createProduct( body ) {
+		return {
+			"message" : "Product created successfully",
+			"data"    : {
+				"id"      : randRange( 100, 999 ),
+				"name"    : "New Product",
+				"price"   : 0.0,
+				"created" : now()
+			}
+		};
+	}
+}

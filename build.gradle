@@ -1,0 +1,379 @@
+import java.nio.file.StandardCopyOption
+import java.nio.file.Files
+import java.text.SimpleDateFormat
+import java.util.Date
+
+// https://docs.gradle.org/current/userguide/building_java_projects.html#sec:java_packaging
+plugins {
+    id 'java'
+    // For source code formatting
+    id "com.diffplug.spotless" version "8.2.1"
+    // https://github.com/harbby/gradle-serviceloader
+    id "com.github.harbby.gradle.serviceloader" version "1.1.9"
+    // Shadow
+    id "com.gradleup.shadow" version "9.3.2"
+    // Download task
+    id "de.undercouch.download" version "5.7.0"
+    // Task visualizer
+    id "com.dorongold.task-tree" version "4.0.1"
+    // Maven Publisher
+    id 'maven-publish'
+    id 'signing'
+}
+
+/**
+ * Project Properties
+ */
+ext {
+    buildID = System.getenv( 'BUILD_ID' ) ?: '0'
+    branch = System.getenv( 'BRANCH' ) ?: 'development'
+}
+
+if (branch == 'development') {
+    version = version.contains('-') ? version.replaceAll(/-.*/, '-snapshot') : "${version}-snapshot".toString()
+    boxlangVersion = boxlangVersion.contains('-') ? boxlangVersion.replaceAll(/-.*/, '-snapshot') : "${boxlangVersion}-snapshot".toString()
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+/**
+ * Separate configuration for the GCF Java Function Invoker used only during
+ * local development.  Keeping it isolated means the invoker JAR is never
+ * mixed into the compile, test, or shadow-JAR classpaths.
+ */
+configurations {
+    invoker
+}
+
+dependencies {
+    // LOCAL DEVELOPMENT ONLY
+    // CHOOSE THE RIGHT LOCATION FOR YOUR LOCAL DEPENDENCIES
+    if ( file( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' ).exists() ) {
+        implementation files( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' )
+        implementation files( '../boxlang-web-support/build/distributions/boxlang-web-support-' + boxlangVersion + '.jar' )
+    } else {
+        // Downloaded Dependencies
+        implementation files( 'src/test/resources/libs/boxlang-web-support-' + boxlangVersion + '.jar' )
+        implementation files( 'src/test/resources/libs/boxlang-' + boxlangVersion + '.jar' )
+    }
+
+    // Google Cloud Functions Framework API (provided by GCF runtime — compileOnly keeps it out of the fat JAR)
+    compileOnly 'com.google.cloud.functions:functions-framework-api:1.1.0'
+
+    // GCF Java Function Invoker — local dev server only, not on any compile/test/runtime path
+    invoker 'com.google.cloud.functions.invoker:java-function-invoker:1.3.1'
+
+    // SLF4J no-op binding to silence BoxLang's SLF4J dependency
+    implementation 'org.slf4j:slf4j-nop:2.0.17'
+
+    // Testing Dependencies
+    testImplementation 'com.google.cloud.functions:functions-framework-api:1.1.0'
+    // Pin this for now as there is a problem finding the tests with 5.11.4
+    testImplementation "org.junit.jupiter:junit-jupiter:6.+"
+    testImplementation "org.mockito:mockito-core:5.+"
+    testImplementation "com.google.truth:truth:1.+"
+    // Explicitly declare the JUnit platform launcher (to avoid deprecation)
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion( jdkVersion )
+    targetCompatibility = JavaVersion.toVersion( jdkVersion )
+    withJavadocJar()
+    withSourcesJar()
+}
+
+compileJava {
+    options.incremental = true
+    options.encoding = 'UTF-8'
+    options.debug = true
+}
+
+compileTestJava {
+    source sourceSets.test.java
+    dependsOn compileJava, serviceLoaderBuild
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    archiveVersion = "${version}"
+    manifest {
+        attributes 'Description': 'The BoxLang Google Cloud Functions Runtime'
+        attributes 'Implementation-Version': "${version}+${buildID}"
+        attributes 'Created-On': new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss" ).format( new Date() )
+        attributes 'Created-By': "Ortus Solutions, Corp"
+    }
+}
+
+shadowJar {
+    archiveClassifier = ""
+    destinationDirectory = file( "build/distributions" )
+
+    // Configure duplicates strategy and service file merging for Shadow 9.0+
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+
+    // Exclude web-server and ANTLR GUI modules not needed in GCF
+    exclude "io/undertow/**"
+    exclude "org/jboss/**"
+    exclude "org/wildfly/**"
+    exclude "org/xnio/**"
+    exclude "org/antlr/v4/gui/**"
+
+    // GCF provides functions-framework at runtime — exclude it from the fat JAR
+    dependencies {
+        exclude( dependency( 'com.google.cloud.functions:functions-framework-api:.*' ) )
+    }
+
+    // Relocate ASM to avoid classpath conflicts
+    relocate 'org.objectweb.asm', 'ortus.boxlang.asm'
+}
+
+/**
+ * Generate checksums for the given file using the specified algorithm
+ */
+def generateChecksum( File file, String algorithm ) {
+    def digest = java.security.MessageDigest.getInstance( algorithm )
+    file.eachByte( 4096 ) { bytes, size ->
+        digest.update( bytes, 0, size )
+    }
+    def checksum = digest.digest().collect { String.format( '%02x', it ) }.join()
+    def checksumFile = new File( file.parent, "${file.name}.${algorithm.toLowerCase()}" )
+    checksumFile.text = "${checksum}  ${file.name}\n"
+}
+
+/**
+ * Publish the artifacts to the local maven repository
+ */
+publishing {
+    publications {
+        shadow( MavenPublication ) { publication ->
+            artifact shadowJar
+            artifact javadocJar
+            artifact sourcesJar
+
+            groupId = 'io.boxlang'
+            artifactId = 'boxlang-google-functions'
+            pom {
+                name = "BoxLang Google Cloud Functions Runtime"
+                description = "BoxLang is a dynamic multi-runtime JVM Language based on fluency and functional constructs. This is the Google Cloud Functions Runtime for BoxLang."
+                url = "https://boxlang.io"
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:https://github.com/ortus-boxlang/boxlang-google-functions.git'
+                    developerConnection = 'scm:git:ssh://github.com/ortus-boxlang/boxlang-google-functions.git'
+                    url = 'https://github.com/ortus-boxlang/boxlang-google-functions'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'local-repo'
+            url = layout.buildDirectory.dir( "repo" )
+        }
+    }
+}
+
+/**
+ * Digital Signing of assets
+ */
+signing {
+    def gpgKey = System.getenv( "GPG_KEY" )
+    def gpgPassword = System.getenv( "GPG_PASSWORD" )
+    if ( gpgKey && gpgPassword ) {
+        useInMemoryPgpKeys( gpgKey, gpgPassword )
+    }
+    sign publishing.publications.shadow
+}
+
+/**
+ * ServiceLoader registration — keep in sync with BoxLang module conventions
+ */
+serviceLoader {
+    serviceInterface 'ortus.boxlang.runtime.bifs.BIF'
+    serviceInterface 'ortus.boxlang.runtime.components.Component'
+    serviceInterface 'ortus.boxlang.runtime.async.tasks.IScheduler'
+    serviceInterface 'ortus.boxlang.runtime.cache.providers.ICacheProvider'
+    serviceInterface 'ortus.boxlang.runtime.events.IInterceptor'
+}
+
+/**
+ * Token Replacements for version.properties
+ */
+processResources {
+    filter( org.apache.tools.ant.filters.ReplaceTokens, tokens: [ 'build.date': new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss" ).format( new Date() ) ] )
+    filter( org.apache.tools.ant.filters.ReplaceTokens, tokens: [ 'build.version': version + "+" + buildID ] )
+}
+
+javadoc {
+    options.addBooleanOption( "Xdoclint:none", true )
+    options.addBooleanOption( 'html5', true )
+}
+
+task zipJavadocs( type: Zip ) {
+    group "documentation"
+    from javadoc.destinationDir
+    archiveFileName = "${project.name}-javadocs-${version}.zip"
+    destinationDirectory = file( "$buildDir/distributions" )
+    doLast {
+        println "+ Javadocs have been zipped to the distribution folder"
+    }
+}
+javadoc.finalizedBy( zipJavadocs )
+
+/**
+ * Source Code Formatting
+ */
+spotless {
+    java {
+        target fileTree( "." ) {
+            include "**/*.java"
+            exclude "**/build/**", "bin/**", "examples/**"
+        }
+        eclipse().configFile( "./.ortus-java-style.xml" )
+        toggleOffOn()
+    }
+}
+
+/**
+ * Build the deployable fat JAR zip for GCF upload
+ */
+task buildMainZip( type: Zip ) {
+    archiveFileName = "${project.name}-${version}.zip"
+    from 'src/main/resources/Lambda.bx'
+    from( 'src/main/resources' ) {
+        include '*.bx'
+        exclude 'Lambda.bx'
+    }
+    into( 'lib' ) {
+        from shadowJar.outputs.files
+    }
+
+    doLast {
+        file( "build/distributions" ).listFiles().each { file ->
+            if ( file.name.endsWith( '.zip' ) || file.name.endsWith( '.jar' ) ) {
+                generateChecksum( file, 'SHA-256' )
+                generateChecksum( file, 'MD5' )
+            }
+        }
+        println "+ Main Zip has been created"
+    }
+}
+shadowJar.finalizedBy( buildMainZip )
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+    }
+}
+
+/**
+ * Task to download the latest BoxLang JARs for local development/testing
+ */
+/**
+ * Run the Google Cloud Function locally using the official GCF Java Function
+ * Invoker. The invoker starts an HTTP server on port 8080 (configurable via
+ * -Pport=NNNN) and routes every request through GcpFunctionRunner.
+ *
+ * Usage:
+ *   ./gradlew runFunction                    # port 8080, production .bx root
+ *   ./gradlew runFunction -Pport=9090        # custom port
+ *   ./gradlew runFunction -Pdebug=true       # enable BoxLang verbose logging
+ *   ./gradlew runFunction -PfunctionRoot=... # custom .bx root directory
+ *
+ * The function root defaults to src/main/resources so you can edit .bx files
+ * and restart without rebuilding the JAR each time.
+ */
+task runFunction( type: JavaExec, dependsOn: shadowJar ) {
+    group = "application"
+    description = "Run GcpFunctionRunner locally via the GCF Java Function Invoker"
+
+    // Only the invoker JAR goes on the JVM classpath; the shadow JAR is
+    // passed to the invoker via --classpath so it is loaded in a child
+    // classloader (matching the actual GCF deployment model).
+    classpath = configurations.invoker
+    mainClass  = "com.google.cloud.functions.invoker.runner.Invoker"
+
+    // Point the function root at the main .bx resources so handlers can be
+    // edited without rebuilding the shadow JAR.
+    def bxRoot = ( project.findProperty( 'functionRoot' ) ?: file( 'src/main/resources' ).absolutePath ).toString()
+
+    environment 'BOXLANG_GCP_ROOT',      bxRoot
+    environment 'BOXLANG_GCP_DEBUGMODE', ( project.findProperty( 'debug' ) ?: 'false' ).toString()
+
+    // Resolve the shadow JAR path inside doFirst so it runs after shadowJar
+    // has finished writing its output.
+    doFirst {
+        args '--classpath', shadowJar.outputs.files.asPath,
+             '--target',    'ortus.boxlang.runtime.gcp.GcpFunctionRunner',
+             '--port',      ( project.findProperty( 'port' ) ?: '8080' ).toString()
+
+        println ""
+        println "================================================================"
+        println " BoxLang GCF Function Invoker"
+        println " Listening on  : http://localhost:${project.findProperty( 'port' ) ?: '8080'}"
+        println " Function root : ${bxRoot}"
+        println " Debug mode    : ${project.findProperty( 'debug' ) ?: 'false'}"
+        println " Press Ctrl+C to stop."
+        println "================================================================"
+        println ""
+    }
+}
+
+/**
+ * Task to download the latest BoxLang JARs for local development/testing
+ */
+task downloadBoxLang( type: Download ) {
+    doFirst {
+        file( "src/test/resources/libs" ).mkdirs()
+    }
+    src([
+        "https://downloads.ortussolutions.com/ortussolutions/boxlang/${boxlangVersion}/boxlang-${boxlangVersion}.jar",
+        "https://downloads.ortussolutions.com/ortussolutions/boxlang-runtimes/boxlang-web-support/${boxlangVersion}/boxlang-web-support-${boxlangVersion}.jar"
+    ])
+    dest "src/test/resources/libs/"
+    overwrite true
+    onlyIfModified false
+}
+
+/**
+ * Version bumping helpers
+ */
+project.ext.bumpVersion = {
+    boolean major = false,
+    boolean minor = false,
+    boolean patch = false,
+    property = "version" ->
+
+    def propertiesFile = file( './gradle.properties' )
+    def properties = new Properties()
+    properties.load( propertiesFile.newDataInputStream() )
+
+    def currentVersion = properties.getProperty( property )
+    def versionParts = currentVersion.split( '\\.' )
+
+    def newVersion = patch
+        ? "${versionParts[0]}.${versionParts[1]}.${versionParts[2].toInteger() + 1}"
+        : minor
+            ? "${versionParts[0]}.${versionParts[1].toInteger() + 1}.0"
+            : "${versionParts[0].toInteger() + 1}.0.0"
+
+    properties.setProperty( property, newVersion )
+    properties.store( propertiesFile.newWriter(), null )
+    println "Bumped ${property} from ${currentVersion} to ${newVersion}"
+}
+
+task bumpMajorVersion { doLast { bumpVersion( true, false, false, "version" ) } }
+task bumpMinorVersion { doLast { bumpVersion( false, true, false, "version" ) } }
+task bumpPatchVersion { doLast { bumpVersion( false, false, true, "version" ) } }
