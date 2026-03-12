@@ -297,7 +297,7 @@ test {
  */
 task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     group = "application"
-    description = "Run GcpFunctionRunner locally via the GCF Java Function Invoker"
+    description = "Run GCPFunctionRunner locally via the GCF Java Function Invoker"
 
     // Only the invoker JAR goes on the JVM classpath; the shadow JAR is
     // passed to the invoker via --classpath so it is loaded in a child
@@ -316,7 +316,7 @@ task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     // has finished writing its output.
     doFirst {
         args '--classpath', shadowJar.outputs.files.asPath,
-             '--target',    'ortus.boxlang.runtime.gcp.GcpFunctionRunner',
+             '--target',    'ortus.boxlang.runtime.gcp.GCPFunctionRunner',
              '--port',      ( project.findProperty( 'port' ) ?: '8080' ).toString()
 
         println ""

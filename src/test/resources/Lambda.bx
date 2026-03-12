@@ -1,5 +1,5 @@
 /**
- * Test Lambda.bx — default handler used by GcpFunctionRunnerTest
+ * Test Lambda.bx — default handler used by GCPFunctionRunnerTest
  */
 class {
 

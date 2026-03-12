@@ -26,7 +26,7 @@ import ortus.boxlang.runtime.BoxRuntime;
  * Handles one-time static initialization of the BoxLang runtime for
  * Google Cloud Functions cold-start optimization.
  * <p>
- * Called from {@link GcpFunctionRunner}'s static initializer so the runtime
+ * Called from {@link GCPFunctionRunner}'s static initializer so the runtime
  * is ready before the first request arrives. Subsequent warm invocations
  * reuse the already-started runtime without paying the startup cost again.
  * <p>

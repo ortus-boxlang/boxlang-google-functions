@@ -41,7 +41,7 @@ The runtime is composed of several focused components:
 
 | Component | Responsibility |
 |---|---|
-| `GcpFunctionRunner` | Main Google Cloud Functions entrypoint (`HttpFunction`) |
+| `GCPFunctionRunner` | Main Google Cloud Functions entrypoint (`HttpFunction`) |
 | `RuntimeBootstrap` | Initializes the BoxLang runtime during cold start |
 | `RequestMapper` | Converts `HttpRequest` → BoxLang event struct |
 | `RouteResolver` | Resolves URI paths to `.bx` handler classes |
@@ -59,7 +59,7 @@ HTTP Request
 Google Cloud Functions (Gen2)
 │
 ▼
-GcpFunctionRunner
+GCPFunctionRunner
 │
 ▼
 RequestMapper
@@ -135,7 +135,7 @@ class {
 boxlang-google-functions
 │
 ├── src/main/java/ortus/boxlang/runtime/gcp
-│   ├── GcpFunctionRunner.java
+│   ├── GCPFunctionRunner.java
 │   ├── RuntimeBootstrap.java
 │   ├── RequestMapper.java
 │   ├── RouteResolver.java

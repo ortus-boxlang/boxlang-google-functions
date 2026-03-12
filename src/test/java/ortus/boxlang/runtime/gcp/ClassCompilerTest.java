@@ -33,7 +33,7 @@ import ortus.boxlang.runtime.util.ResolvedFilePath;
 public class ClassCompilerTest {
 
 	/** Shared runner whose static block starts the BoxLang runtime once */
-	private static final GcpFunctionRunner runner = new GcpFunctionRunner(
+	private static final GCPFunctionRunner runner = new GCPFunctionRunner(
 	    Path.of( "src", "test", "resources", "Lambda.bx" ), true
 	);
 

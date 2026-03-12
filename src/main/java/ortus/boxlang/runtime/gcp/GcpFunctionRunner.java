@@ -92,7 +92,7 @@ import ortus.boxlang.runtime.util.ResolvedFilePath;
  * <li>{@code GOOGLE_CLOUD_PROJECT} – GCP project ID</li>
  * </ul>
  */
-public class GcpFunctionRunner implements HttpFunction {
+public class GCPFunctionRunner implements HttpFunction {
 
 	// =========================================================================
 	// Constants
@@ -156,7 +156,7 @@ public class GcpFunctionRunner implements HttpFunction {
 	 * No-arg constructor required by the GCF functions-framework.
 	 * Reads configuration from environment variables.
 	 */
-	public GcpFunctionRunner() {
+	public GCPFunctionRunner() {
 		Map<String, String> env = System.getenv();
 		this.functionRoot	= env.getOrDefault( "BOXLANG_GCP_ROOT", RuntimeBootstrap.DEFAULT_FUNCTION_ROOT );
 		this.debugMode		= Boolean.parseBoolean( env.getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
@@ -174,7 +174,7 @@ public class GcpFunctionRunner implements HttpFunction {
 	 * @param functionPath The absolute path to the default {@code .bx} handler
 	 * @param debugMode    {@code true} to enable verbose logging
 	 */
-	public GcpFunctionRunner( Path functionPath, boolean debugMode ) {
+	public GCPFunctionRunner( Path functionPath, boolean debugMode ) {
 		Map<String, String> env = System.getenv();
 		this.defaultFunctionPath	= functionPath;
 		this.debugMode				= debugMode;
@@ -255,7 +255,7 @@ public class GcpFunctionRunner implements HttpFunction {
 		RequestBoxContext.setCurrent( requestContext );
 
 		// GCP context struct (stands in for AWS Context object)
-		IStruct		gcpContext		= buildGcpContext( request );
+		IStruct		GCP_Context		= buildGcpContext( request );
 
 		Throwable	errorToHandle	= null;
 		Object		functionResult	= null;
@@ -268,13 +268,13 @@ public class GcpFunctionRunner implements HttpFunction {
 			Key functionMethod = getFunctionMethod( eventStruct );
 
 			// Application lifecycle: onRequestStart
-			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
 
 			// Invoke the BoxLang handler method
 			functionResult = function.dereferenceAndInvoke(
 			    boxContext,
 			    functionMethod,
-			    new Object[] { eventStruct, gcpContext, responseStruct },
+			    new Object[] { eventStruct, GCP_Context, responseStruct },
 			    false
 			);
 
@@ -285,7 +285,7 @@ public class GcpFunctionRunner implements HttpFunction {
 			}
 
 			try {
-				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
 			} catch ( Throwable ae ) {
 				errorToHandle = ae;
 			}
@@ -303,7 +303,7 @@ public class GcpFunctionRunner implements HttpFunction {
 
 			// Application lifecycle: onRequestEnd
 			try {
-				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
 			} catch ( Throwable e ) {
 				errorToHandle = e;
 			}
@@ -315,7 +315,7 @@ public class GcpFunctionRunner implements HttpFunction {
 				System.err.println( "[BoxLang GCP] Error: " + errorToHandle.getMessage() );
 
 				try {
-					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, gcpContext } ) ) {
+					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, GCP_Context } ) ) {
 						throw errorToHandle;
 					}
 				} catch ( Throwable t ) {

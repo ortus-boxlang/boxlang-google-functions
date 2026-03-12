@@ -9,6 +9,9 @@ build/
 .vscode/settings.json
 *.class
 
+# Generated / downloaded artifacts
+bin/
+
 # Downloaded test dependencies (re-downloadable via `./gradlew downloadBoxLang`)
 src/test/resources/libs/
 
