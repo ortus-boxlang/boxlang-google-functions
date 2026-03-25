@@ -20,6 +20,8 @@ package ortus.boxlang.runtime.gcp;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 import com.google.cloud.functions.HttpFunction;
 import com.google.cloud.functions.HttpRequest;
@@ -32,13 +34,16 @@ import ortus.boxlang.runtime.context.RequestBoxContext;
 import ortus.boxlang.runtime.context.ScriptingRequestBoxContext;
 import ortus.boxlang.runtime.dynamic.casters.StringCaster;
 import ortus.boxlang.runtime.dynamic.casters.StructCaster;
+import ortus.boxlang.runtime.interop.DynamicObject;
 import ortus.boxlang.runtime.runnables.IClassRunnable;
+import ortus.boxlang.runtime.runnables.RunnableLoader;
 import ortus.boxlang.runtime.scopes.Key;
 import ortus.boxlang.runtime.types.Array;
 import ortus.boxlang.runtime.types.IStruct;
 import ortus.boxlang.runtime.types.Struct;
 import ortus.boxlang.runtime.types.exceptions.AbortException;
 import ortus.boxlang.runtime.types.exceptions.ExceptionUtil;
+import ortus.boxlang.runtime.types.util.StringUtil;
 import ortus.boxlang.runtime.util.FileSystemUtil;
 import ortus.boxlang.runtime.util.ResolvedFilePath;
 
@@ -50,14 +55,14 @@ import ortus.boxlang.runtime.util.ResolvedFilePath;
  * BoxLang request:
  * <ol>
  * <li><strong>Cold start</strong> – The static initializer starts the BoxLang
- * runtime exactly once per container instance via {@link RuntimeBootstrap}.</li>
+ * runtime exactly once per container instance via the static initializer.</li>
  * <li><strong>Request mapping</strong> – {@link RequestMapper} converts the
  * incoming {@link HttpRequest} into a BoxLang event struct whose shape mirrors
  * the AWS API Gateway v2.0 event for cross-platform compatibility.</li>
- * <li><strong>Route resolution</strong> – {@link RouteResolver} extracts the
+ * <li><strong>Route resolution</strong> – {@link #resolveRoute} extracts the
  * first URI path segment, converts it to PascalCase, and looks for a matching
  * {@code .bx} file. Falls back to {@code Lambda.bx} when no match is found.</li>
- * <li><strong>Compilation &amp; caching</strong> – {@link ClassCompiler} compiles
+ * <li><strong>Compilation &amp; caching</strong> – {@link #loadHandler} compiles
  * the resolved {@code .bx} file and caches it for warm invocations.</li>
  * <li><strong>Execution</strong> – The compiled class is invoked with the
  * convention {@code run(event, context, response)}. An optional
@@ -92,11 +97,17 @@ import ortus.boxlang.runtime.util.ResolvedFilePath;
  * <li>{@code GOOGLE_CLOUD_PROJECT} – GCP project ID</li>
  * </ul>
  */
-public class GCPFunctionRunner implements HttpFunction {
+public class FunctionRunner implements HttpFunction {
 
 	// =========================================================================
 	// Constants
 	// =========================================================================
+
+	/**
+	 * The default root directory for {@code .bx} files on Google Cloud Functions
+	 * (Gen2). Used when {@code BOXLANG_GCP_ROOT} is not set.
+	 */
+	public static final String			DEFAULT_FUNCTION_ROOT	= "/workspace";
 
 	/**
 	 * The header clients may send to route the request to a specific method
@@ -114,19 +125,67 @@ public class GCPFunctionRunner implements HttpFunction {
 	// =========================================================================
 
 	/**
+	 * Logger used for lifecycle messages that should not appear unconditionally
+	 * on stdout in production (e.g. shutdown hook). Uses JUL FINE level so output
+	 * is suppressed unless the JUL handler is configured to show FINE or lower.
+	 */
+	private static final Logger							logger		= Logger.getLogger( FunctionRunner.class.getName() );
+
+	/**
 	 * The BoxLang runtime singleton, initialized once at cold-start.
 	 */
-	protected static final BoxRuntime	runtime;
+	protected static final BoxRuntime					runtime;
+
+	/**
+	 * Thread-safe cache of compiled BoxLang class instances, keyed by absolute
+	 * file path string. Populated atomically on first access per path.
+	 */
+	private static final Map<String, IClassRunnable>	classCache	= new ConcurrentHashMap<>();
 
 	static {
-		runtime = RuntimeBootstrap.initialize();
+		runtime = initRuntime();
 
 		// Gracefully shut down the runtime when GCF terminates the container.
 		Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-			System.out.println( "[BoxLang GCP] ShutdownHook triggered — shutting down runtime..." );
+			logger.fine( "[BoxLang GCP] ShutdownHook triggered — shutting down runtime..." );
 			runtime.shutdown();
-			System.out.println( "[BoxLang GCP] Runtime shut down cleanly." );
+			logger.fine( "[BoxLang GCP] Runtime shut down cleanly." );
 		} ) );
+	}
+
+	/**
+	 * Initialize the BoxLang runtime at cold-start.
+	 * <p>
+	 * Reads environment variables, locates an optional {@code boxlang.json}
+	 * configuration file, and calls {@link BoxRuntime#getInstance} which returns
+	 * (or creates) the singleton. {@code waitForStart()} blocks until the runtime
+	 * is fully ready to serve requests.
+	 *
+	 * @return The initialized {@link BoxRuntime} singleton
+	 */
+	private static BoxRuntime initRuntime() {
+		Map<String, String>	env				= System.getenv();
+		boolean				debugMode		= Boolean.parseBoolean( env.getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
+		String				functionRoot	= env.getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
+		String				configPath		= null;
+
+		// Explicit config path wins; otherwise auto-detect boxlang.json in the function root.
+		if ( env.get( "BOXLANG_GCP_CONFIG" ) != null ) {
+			configPath = env.get( "BOXLANG_GCP_CONFIG" );
+		} else if ( Path.of( functionRoot, "boxlang.json" ).toFile().exists() ) {
+			configPath = Path.of( functionRoot, "boxlang.json" ).toString();
+		}
+
+		if ( debugMode ) {
+			System.out.println( "[BoxLang GCP] Initializing runtime (function root: " + functionRoot + ")" );
+			if ( configPath != null ) {
+				System.out.println( "[BoxLang GCP] Using config: " + configPath );
+			}
+		}
+
+		// Use the system temp directory as BoxLang's working directory since
+		// the /workspace filesystem on GCF is read-only during execution.
+		return BoxRuntime.getInstance( debugMode, configPath, System.getProperty( "java.io.tmpdir" ) ).waitForStart();
 	}
 
 	// =========================================================================
@@ -154,42 +213,52 @@ public class GCPFunctionRunner implements HttpFunction {
 
 	/**
 	 * No-arg constructor required by the GCF functions-framework.
-	 * Reads configuration from environment variables.
+	 * Reads configuration from environment variables and delegates to the
+	 * explicit constructor.
 	 */
-	public GCPFunctionRunner() {
-		Map<String, String> env = System.getenv();
-		this.functionRoot	= env.getOrDefault( "BOXLANG_GCP_ROOT", RuntimeBootstrap.DEFAULT_FUNCTION_ROOT );
-		this.debugMode		= Boolean.parseBoolean( env.getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
+	public FunctionRunner() {
+		this( resolveDefaultFunctionPath(), resolveDebugMode() );
+	}
 
-		// Allow an env-var override for the default handler class
-		String classOverride = env.get( "BOXLANG_GCP_CLASS" );
-		this.defaultFunctionPath = classOverride != null
-		    ? Path.of( classOverride ).toAbsolutePath()
-		    : Path.of( functionRoot, "Lambda.bx" );
+	/**
+	 * Resolve the default {@code .bx} handler path from environment variables.
+	 * Honors {@code BOXLANG_GCP_CLASS} as an override; otherwise builds
+	 * {@code Lambda.bx} under the configured function root.
+	 */
+	private static Path resolveDefaultFunctionPath() {
+		Map<String, String>	env				= System.getenv();
+		String				classOverride	= env.get( "BOXLANG_GCP_CLASS" );
+		if ( classOverride != null ) {
+			return Path.of( classOverride ).toAbsolutePath();
+		}
+		String functionRoot = env.getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
+		return Path.of( functionRoot, "Lambda.bx" );
+	}
+
+	/**
+	 * Resolve the debug mode flag from environment variables.
+	 */
+	private static boolean resolveDebugMode() {
+		return Boolean.parseBoolean( System.getenv().getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
 	}
 
 	/**
 	 * Constructor for tests and local tooling — accepts explicit path and debug flag.
+	 * Also serves as the delegation target for the no-arg constructor.
 	 *
 	 * @param functionPath The absolute path to the default {@code .bx} handler
 	 * @param debugMode    {@code true} to enable verbose logging
 	 */
-	public GCPFunctionRunner( Path functionPath, boolean debugMode ) {
-		Map<String, String> env = System.getenv();
+	public FunctionRunner( Path functionPath, boolean debugMode ) {
 		this.defaultFunctionPath	= functionPath;
 		this.debugMode				= debugMode;
 
-		// When running under tests the functionRoot is derived from the test resource
-		// directory, otherwise it comes from the environment (or the default).
+		// Derive the function root from the path when running under tests;
+		// otherwise read it from the environment.
 		if ( functionPath.toString().contains( "test/resources" ) ) {
 			this.functionRoot = functionPath.getParent().toString();
 		} else {
-			this.functionRoot = env.getOrDefault( "BOXLANG_GCP_ROOT", RuntimeBootstrap.DEFAULT_FUNCTION_ROOT );
-		}
-
-		// Honor the env-var override even in test constructor
-		if ( env.get( "BOXLANG_GCP_DEBUGMODE" ) != null ) {
-			this.debugMode = Boolean.parseBoolean( env.get( "BOXLANG_GCP_DEBUGMODE" ) );
+			this.functionRoot = System.getenv().getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
 		}
 
 		if ( this.debugMode ) {
@@ -237,7 +306,7 @@ public class GCPFunctionRunner implements HttpFunction {
 		IStruct					eventStruct			= RequestMapper.toEventStruct( request );
 
 		// --- Resolve the .bx class from the URI (falls back to Lambda.bx) ---
-		Path					resolvedClassPath	= RouteResolver.resolve( request.getPath(), this.functionRoot, this.debugMode );
+		Path					resolvedClassPath	= resolveRoute( request.getPath(), this.functionRoot, this.debugMode );
 		Path					finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : defaultFunctionPath;
 
 		ResolvedFilePath		resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
@@ -262,7 +331,7 @@ public class GCPFunctionRunner implements HttpFunction {
 
 		try {
 			// Compile (or retrieve cached) .bx class
-			IClassRunnable function = ClassCompiler.getOrCompile( resolvedFilePath, boxContext, debugMode );
+			IClassRunnable function = loadHandler( resolvedFilePath, boxContext, debugMode );
 
 			// Determine which method to invoke
 			Key functionMethod = getFunctionMethod( eventStruct );
@@ -294,7 +363,8 @@ public class GCPFunctionRunner implements HttpFunction {
 
 			// Re-throw custom abort causes as runtime exceptions
 			if ( e.getCause() != null ) {
-				throw ( RuntimeException ) e.getCause();
+				Throwable cause = e.getCause();
+				throw cause instanceof RuntimeException ? ( RuntimeException ) cause : new RuntimeException( cause );
 			}
 
 		} catch ( Exception e ) {
@@ -343,6 +413,92 @@ public class GCPFunctionRunner implements HttpFunction {
 	// =========================================================================
 	// Helpers
 	// =========================================================================
+
+	/**
+	 * Return a compiled {@link IClassRunnable} for the given file path, compiling
+	 * and caching it on first access. Cache population is atomic — concurrent
+	 * calls for the same path compile exactly once.
+	 *
+	 * @param resolvedPath The resolved file path of the {@code .bx} class
+	 * @param context      The BoxLang execution context used for compilation
+	 * @param debugMode    When {@code true}, prints a compile message on cache miss
+	 *
+	 * @return A ready-to-invoke {@link IClassRunnable} instance
+	 */
+	static IClassRunnable loadHandler( ResolvedFilePath resolvedPath, IBoxContext context, boolean debugMode ) {
+		String cacheKey = resolvedPath.absolutePath().toString();
+		return classCache.computeIfAbsent( cacheKey, k -> {
+			if ( debugMode ) {
+				System.out.println( "[BoxLang GCP] Compiling: " + k );
+			}
+			return ( IClassRunnable ) DynamicObject.of(
+			    RunnableLoader.getInstance().loadClass( resolvedPath, context )
+			).invokeConstructor( context ).getTargetInstance();
+		} );
+	}
+
+	/**
+	 * Check whether a compiled class for the given absolute path is already
+	 * in the cache. Primarily useful for testing cold vs. warm invocation behaviour.
+	 *
+	 * @param absolutePath The absolute file path string to check
+	 *
+	 * @return {@code true} if the class is cached
+	 */
+	static boolean isHandlerCached( String absolutePath ) {
+		return classCache.containsKey( absolutePath );
+	}
+
+	/**
+	 * Remove all entries from the compiled class cache.
+	 * Intended for use in tests that need a clean slate between runs.
+	 */
+	static void clearHandlerCache() {
+		classCache.clear();
+	}
+
+	/**
+	 * Attempt to resolve a {@code .bx} class file from the given URI path.
+	 * <p>
+	 * Extracts the first URI path segment, converts it to PascalCase, and looks
+	 * for a matching {@code .bx} file under {@code functionRoot}. Returns
+	 * {@code null} when the URI is root-level, empty, or no matching file exists,
+	 * allowing the caller to fall back to {@code Lambda.bx}.
+	 *
+	 * @param uriPath      The URI path from the HTTP request (e.g. {@code /products/123})
+	 * @param functionRoot The root directory where BoxLang {@code .bx} files live
+	 * @param debugMode    When {@code true}, prints resolution steps to stdout
+	 *
+	 * @return The absolute {@link Path} to the resolved class file, or {@code null}
+	 */
+	static Path resolveRoute( String uriPath, String functionRoot, boolean debugMode ) {
+		if ( uriPath == null || uriPath.isEmpty() || uriPath.equals( "/" ) ) {
+			return null;
+		}
+
+		String		cleanPath		= uriPath.startsWith( "/" ) ? uriPath.substring( 1 ) : uriPath;
+		String[]	pathSegments	= cleanPath.split( "/" );
+
+		if ( pathSegments.length == 0 || pathSegments[ 0 ].isEmpty() ) {
+			return null;
+		}
+
+		String	className	= StringUtil.pascalCase( pathSegments[ 0 ] ) + ".bx";
+		Path	classPath	= Path.of( functionRoot, className );
+
+		if ( classPath.toFile().exists() ) {
+			if ( debugMode ) {
+				System.out.println( "[BoxLang GCP] URI routing: " + uriPath + " → " + classPath );
+			}
+			return classPath.toAbsolutePath();
+		}
+
+		if ( debugMode ) {
+			System.out.println( "[BoxLang GCP] URI routing: class not found for " + uriPath + " (looked for " + classPath + ")" );
+		}
+
+		return null;
+	}
 
 	/**
 	 * Determine which BoxLang method to invoke on the resolved class.

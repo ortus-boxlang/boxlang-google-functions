@@ -5,8 +5,7 @@ class {
 
 	function run( event, context, response ) {
 		println( "====> [Test] Lambda.run() called" );
-		println( event );
-		println( response );
+		return { "status": "ok", "message": "Hello from BoxLang" };
 	}
 
 	function hello( event, context, response ) {

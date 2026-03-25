@@ -29,13 +29,13 @@ import ortus.boxlang.runtime.gcp.mocks.MockHttpRequest;
 import ortus.boxlang.runtime.gcp.mocks.MockHttpResponse;
 
 /**
- * Integration tests for {@link GCPFunctionRunner}.
+ * Integration tests for {@link FunctionRunner}.
  * <p>
  * Each test exercises the full execution path: HTTP request → BoxLang execution
  * → HTTP response. The BoxLang runtime is started once by the static initializer
- * in {@link GCPFunctionRunner} and reused across all tests.
+ * in {@link FunctionRunner} and reused across all tests.
  */
-public class GCPFunctionRunnerTest {
+public class FunctionRunnerTest {
 
 	/** Shared test resource path */
 	private static final Path TEST_LAMBDA = Path.of( "src", "test", "resources", "Lambda.bx" );
@@ -47,7 +47,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Throws RuntimeException when Lambda.bx does not exist" )
 	public void testLambdaNotFound() {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( Path.of( "invalid", "Lambda.bx" ), true );
+		FunctionRunner		runner	= new FunctionRunner( Path.of( "invalid", "Lambda.bx" ), true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -57,7 +57,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Executes Lambda.bx and returns 200 status" )
 	public void testValidLambdaReturns200() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -69,7 +69,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "x-bx-function header routes to alternative method in Lambda.bx" )
 	public void testXBxFunctionHeaderRouting() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/" )
 		    .withHeader( "x-bx-function", "hello" );
 		MockHttpResponse	res		= new MockHttpResponse();
@@ -87,7 +87,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Routes /products to Products.bx" )
 	public void testUriRoutingToProducts() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/products" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -100,7 +100,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Routes /products/123 → Products.bx (first segment only)" )
 	public void testUriRoutingToProductsWithId() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/products/123" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -113,7 +113,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Routes /customers to Customers.bx" )
 	public void testUriRoutingToCustomers() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/customers" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -126,7 +126,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Routes /user-profiles (hyphenated) to UserProfiles.bx" )
 	public void testUriRoutingWithHyphenatedPath() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/user-profiles" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -139,7 +139,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Falls back to Lambda.bx when no matching class found for URI" )
 	public void testUriFallbackToLambda() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/nonexistent-route" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -152,7 +152,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Routes /products/categories/deep-nest → Products.bx (first segment only)" )
 	public void testUriRoutingDeeplyNestedPath() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/products/categories/electronics" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -169,7 +169,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Warm invocations return consistent results (cache correctness)" )
 	public void testWarmInvocationConsistency() throws Exception {
-		GCPFunctionRunner runner = new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, true );
 
 		for ( int i = 0; i < 3; i++ ) {
 			MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
@@ -187,7 +187,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Response includes Content-Type header from response struct" )
 	public void testDefaultContentTypeHeader() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -203,7 +203,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Handles large request body without error" )
 	public void testLargeRequestBody() throws Exception {
-		GCPFunctionRunner	runner		= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner		= new FunctionRunner( TEST_LAMBDA, true );
 		String				largeBody	= "x".repeat( 100_000 );
 		MockHttpRequest		req			= new MockHttpRequest( "POST", "/" ).withBody( largeBody );
 		MockHttpResponse	res			= new MockHttpResponse();
@@ -216,7 +216,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Handles request with no headers gracefully" )
 	public void testEmptyHeaders() throws Exception {
-		GCPFunctionRunner	runner	= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner	= new FunctionRunner( TEST_LAMBDA, true );
 		MockHttpRequest		req		= new MockHttpRequest( "GET", "/" );
 		MockHttpResponse	res		= new MockHttpResponse();
 
@@ -228,7 +228,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "Handles concurrent invocations without data corruption" )
 	public void testConcurrentInvocations() throws Exception {
-		GCPFunctionRunner	runner		= new GCPFunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner		runner		= new FunctionRunner( TEST_LAMBDA, true );
 
 		// Launch 5 threads simultaneously
 		Thread[]			threads		= new Thread[ 5 ];
@@ -267,7 +267,7 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "getDefaultFunctionPath returns the configured path" )
 	public void testGetDefaultFunctionPath() {
-		GCPFunctionRunner runner = new GCPFunctionRunner( TEST_LAMBDA, false );
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, false );
 
 		assertThat( runner.getDefaultFunctionPath().toString() ).contains( "Lambda.bx" );
 	}
@@ -275,14 +275,14 @@ public class GCPFunctionRunnerTest {
 	@Test
 	@DisplayName( "inDebugMode returns the configured value" )
 	public void testInDebugMode() {
-		assertThat( new GCPFunctionRunner( TEST_LAMBDA, true ).inDebugMode() ).isTrue();
-		assertThat( new GCPFunctionRunner( TEST_LAMBDA, false ).inDebugMode() ).isFalse();
+		assertThat( new FunctionRunner( TEST_LAMBDA, true ).inDebugMode() ).isTrue();
+		assertThat( new FunctionRunner( TEST_LAMBDA, false ).inDebugMode() ).isFalse();
 	}
 
 	@Test
 	@DisplayName( "getRuntime returns a non-null BoxRuntime" )
 	public void testGetRuntime() {
-		GCPFunctionRunner runner = new GCPFunctionRunner( TEST_LAMBDA, false );
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, false );
 
 		assertThat( runner.getRuntime() ).isNotNull();
 	}

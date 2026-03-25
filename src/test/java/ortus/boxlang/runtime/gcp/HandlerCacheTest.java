@@ -19,7 +19,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import ortus.boxlang.runtime.BoxRuntime;
 import ortus.boxlang.runtime.context.IBoxContext;
 import ortus.boxlang.runtime.context.ScriptingRequestBoxContext;
 import ortus.boxlang.runtime.runnables.IClassRunnable;
@@ -27,19 +26,19 @@ import ortus.boxlang.runtime.util.FileSystemUtil;
 import ortus.boxlang.runtime.util.ResolvedFilePath;
 
 /**
- * Unit tests for {@link ClassCompiler} — focuses on compilation correctness and
- * cache behaviour (cold vs. warm invocations).
+ * Unit tests for the compile/load/cache logic in {@link FunctionRunner} —
+ * focuses on compilation correctness and cache behaviour (cold vs. warm invocations).
  */
-public class ClassCompilerTest {
+public class HandlerCacheTest {
 
 	/** Shared runner whose static block starts the BoxLang runtime once */
-	private static final GCPFunctionRunner runner = new GCPFunctionRunner(
+	private static final FunctionRunner runner = new FunctionRunner(
 	    Path.of( "src", "test", "resources", "Lambda.bx" ), true
 	);
 
 	@BeforeEach
 	public void clearCache() {
-		ClassCompiler.clearCache();
+		FunctionRunner.clearHandlerCache();
 	}
 
 	private IBoxContext buildContext( Path classPath ) {
@@ -56,12 +55,12 @@ public class ClassCompilerTest {
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
 
-		assertThat( ClassCompiler.isCached( path.toString() ) ).isFalse();
+		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isFalse();
 
-		IClassRunnable compiled = ClassCompiler.getOrCompile( resolved, context, true );
+		IClassRunnable compiled = FunctionRunner.loadHandler( resolved, context, true );
 
 		assertThat( compiled ).isNotNull();
-		assertThat( ClassCompiler.isCached( path.toString() ) ).isTrue();
+		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isTrue();
 	}
 
 	@Test
@@ -71,8 +70,8 @@ public class ClassCompilerTest {
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
 
-		IClassRunnable		first		= ClassCompiler.getOrCompile( resolved, context, true );
-		IClassRunnable		second		= ClassCompiler.getOrCompile( resolved, context, true );
+		IClassRunnable		first		= FunctionRunner.loadHandler( resolved, context, true );
+		IClassRunnable		second		= FunctionRunner.loadHandler( resolved, context, true );
 
 		// Same reference — no recompilation on warm call
 		assertThat( first ).isSameInstanceAs( second );
@@ -86,29 +85,29 @@ public class ClassCompilerTest {
 		IBoxContext		lambdaCtx		= buildContext( lambdaPath );
 		IBoxContext		productsCtx		= buildContext( productsPath );
 
-		IClassRunnable	lambda			= ClassCompiler.getOrCompile( ResolvedFilePath.of( lambdaPath ), lambdaCtx );
-		IClassRunnable	products		= ClassCompiler.getOrCompile( ResolvedFilePath.of( productsPath ), productsCtx );
+		IClassRunnable	lambda			= FunctionRunner.loadHandler( ResolvedFilePath.of( lambdaPath ), lambdaCtx, false );
+		IClassRunnable	products		= FunctionRunner.loadHandler( ResolvedFilePath.of( productsPath ), productsCtx, false );
 
 		assertThat( lambda ).isNotNull();
 		assertThat( products ).isNotNull();
 		assertThat( lambda ).isNotSameInstanceAs( products );
-		assertThat( ClassCompiler.isCached( lambdaPath.toString() ) ).isTrue();
-		assertThat( ClassCompiler.isCached( productsPath.toString() ) ).isTrue();
+		assertThat( FunctionRunner.isHandlerCached( lambdaPath.toString() ) ).isTrue();
+		assertThat( FunctionRunner.isHandlerCached( productsPath.toString() ) ).isTrue();
 	}
 
 	@Test
-	@DisplayName( "clearCache removes all entries" )
+	@DisplayName( "clearHandlerCache removes all entries" )
 	public void testClearCache() {
 		Path				path		= Path.of( "src", "test", "resources", "Lambda.bx" ).toAbsolutePath();
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
 
-		ClassCompiler.getOrCompile( resolved, context );
-		assertThat( ClassCompiler.isCached( path.toString() ) ).isTrue();
+		FunctionRunner.loadHandler( resolved, context, false );
+		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isTrue();
 
-		ClassCompiler.clearCache();
+		FunctionRunner.clearHandlerCache();
 
-		assertThat( ClassCompiler.isCached( path.toString() ) ).isFalse();
+		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isFalse();
 	}
 
 	@Test
@@ -119,7 +118,7 @@ public class ClassCompilerTest {
 		IBoxContext			context		= buildContext( badPath );
 
 		try {
-			ClassCompiler.getOrCompile( resolved, context );
+			FunctionRunner.loadHandler( resolved, context, false );
 			throw new AssertionError( "Expected an exception for a non-existent .bx file" );
 		} catch ( Exception e ) {
 			// Expected — BoxLang cannot load a file that doesn't exist

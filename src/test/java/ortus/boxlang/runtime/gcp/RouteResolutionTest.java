@@ -19,9 +19,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link RouteResolver}.
+ * Unit tests for URI route resolution in {@link FunctionRunner#resolveRoute}.
  */
-public class RouteResolverTest {
+public class RouteResolutionTest {
 
 	/** Root directory containing the test .bx class files */
 	private static final String TEST_ROOT = Path.of( "src", "test", "resources" ).toAbsolutePath().toString();
@@ -29,25 +29,25 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Returns null for root path '/'" )
 	public void testRootPathReturnsNull() {
-		assertThat( RouteResolver.resolve( "/", TEST_ROOT ) ).isNull();
+		assertThat( FunctionRunner.resolveRoute( "/", TEST_ROOT, false ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Returns null for null URI" )
 	public void testNullUriReturnsNull() {
-		assertThat( RouteResolver.resolve( null, TEST_ROOT ) ).isNull();
+		assertThat( FunctionRunner.resolveRoute( null, TEST_ROOT, false ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Returns null for empty URI" )
 	public void testEmptyUriReturnsNull() {
-		assertThat( RouteResolver.resolve( "", TEST_ROOT ) ).isNull();
+		assertThat( FunctionRunner.resolveRoute( "", TEST_ROOT, false ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Resolves /products to Products.bx" )
 	public void testResolvesProductsPath() {
-		Path resolved = RouteResolver.resolve( "/products", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/products", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -56,7 +56,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Resolves /customers to Customers.bx" )
 	public void testResolvesCustomersPath() {
-		Path resolved = RouteResolver.resolve( "/customers", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/customers", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Customers.bx" );
@@ -65,7 +65,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Resolves only the first segment — /products/123 → Products.bx" )
 	public void testNestedPathUsesFirstSegment() {
-		Path resolved = RouteResolver.resolve( "/products/123", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/products/123", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -74,7 +74,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Resolves /products/categories/electronics → Products.bx" )
 	public void testDeeplyNestedPathUsesFirstSegment() {
-		Path resolved = RouteResolver.resolve( "/products/categories/electronics", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/products/categories/electronics", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -83,7 +83,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Returns null for a URI whose class does not exist on disk" )
 	public void testNonExistentClassReturnsNull() {
-		Path resolved = RouteResolver.resolve( "/nonexistent-resource", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/nonexistent-resource", TEST_ROOT, false );
 
 		assertThat( resolved ).isNull();
 	}
@@ -91,7 +91,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Converts hyphenated segment to PascalCase — /user-profiles → UserProfiles.bx" )
 	public void testHyphenatedPathConvertsToPascalCase() {
-		Path resolved = RouteResolver.resolve( "/user-profiles", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/user-profiles", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "UserProfiles.bx" );
@@ -100,7 +100,7 @@ public class RouteResolverTest {
 	@Test
 	@DisplayName( "Resolved path is absolute" )
 	public void testResolvedPathIsAbsolute() {
-		Path resolved = RouteResolver.resolve( "/products", TEST_ROOT );
+		Path resolved = FunctionRunner.resolveRoute( "/products", TEST_ROOT, false );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.isAbsolute() ).isTrue();

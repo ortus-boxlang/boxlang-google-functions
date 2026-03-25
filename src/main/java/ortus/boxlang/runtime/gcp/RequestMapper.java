@@ -20,6 +20,7 @@ package ortus.boxlang.runtime.gcp;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -53,9 +54,9 @@ import ortus.boxlang.runtime.types.Struct;
  * }
  * </pre>
  * <p>
- * Multi-value headers and query parameters are collapsed to their first value
- * to keep the struct shape simple. Handlers that need all values can inspect
- * the raw {@code headers} map directly.
+ * Multi-value headers and query parameters are collapsed to their first value.
+ * Handlers receive only the collapsed single-value struct; the raw multi-value
+ * data is not exposed through the event.
  */
 public final class RequestMapper {
 
@@ -79,7 +80,7 @@ public final class RequestMapper {
 		IStruct headersStruct = new Struct();
 		for ( Map.Entry<String, List<String>> entry : request.getHeaders().entrySet() ) {
 			List<String> values = entry.getValue();
-			headersStruct.put( entry.getKey().toLowerCase(), values.isEmpty() ? "" : values.get( 0 ) );
+			headersStruct.put( entry.getKey().toLowerCase( Locale.ROOT ), values.isEmpty() ? "" : values.get( 0 ) );
 		}
 
 		// --- Query parameters (first-value wins) ---

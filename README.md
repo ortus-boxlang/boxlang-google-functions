@@ -41,11 +41,8 @@ The runtime is composed of several focused components:
 
 | Component | Responsibility |
 |---|---|
-| `GCPFunctionRunner` | Main Google Cloud Functions entrypoint (`HttpFunction`) |
-| `RuntimeBootstrap` | Initializes the BoxLang runtime during cold start |
+| `FunctionRunner` | Main GCF entrypoint (`HttpFunction`); orchestrates all layers including URI routing and handler compilation/caching |
 | `RequestMapper` | Converts `HttpRequest` → BoxLang event struct |
-| `RouteResolver` | Resolves URI paths to `.bx` handler classes |
-| `ClassCompiler` | Compiles and caches `.bx` classes |
 | `ResponseMapper` | Converts BoxLang response structs → HTTP response |
 
 ---
@@ -59,16 +56,13 @@ HTTP Request
 Google Cloud Functions (Gen2)
 │
 ▼
-GCPFunctionRunner
+FunctionRunner
 │
 ▼
 RequestMapper
 │
 ▼
 BoxLang Runtime
-│
-▼
-RouteResolver
 │
 ▼
 Lambda.bx / Products.bx / Customers.bx
@@ -135,14 +129,11 @@ class {
 boxlang-google-functions
 │
 ├── src/main/java/ortus/boxlang/runtime/gcp
-│   ├── GCPFunctionRunner.java
-│   ├── RuntimeBootstrap.java
+│   ├── FunctionRunner.java
 │   ├── RequestMapper.java
-│   ├── RouteResolver.java
-│   ├── ClassCompiler.java
 │   └── ResponseMapper.java
 │
-├── src/main/resources
+├── src/test/resources
 │   ├── Lambda.bx
 │   ├── Products.bx
 │   └── Customers.bx
@@ -152,6 +143,11 @@ boxlang-google-functions
 │
 ├── build.gradle
 └── README.md
+```
+
+```
+Note: During local development, sample `.bx` handlers are loaded from `src/test/resources`.  
+In production deployments, handlers should be placed in `src/main/resources` or another directory specified via `BOXLANG_GCP_ROOT`.
 ```
 
 ---
@@ -237,7 +233,7 @@ gcloud functions deploy boxlang-gcf \
   --runtime=java21 \
   --region=us-central1 \
   --source=. \
-  --entry-point=ortus.boxlang.runtime.gcp.GcpFunctionRunner \
+  --entry-point=ortus.boxlang.runtime.gcp.FunctionRunner \
   --trigger-http \
   --allow-unauthenticated \
   --set-env-vars=BOXLANG_GCP_ROOT=/workspace/src/main/resources

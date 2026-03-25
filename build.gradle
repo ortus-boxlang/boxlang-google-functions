@@ -284,7 +284,7 @@ test {
 /**
  * Run the Google Cloud Function locally using the official GCF Java Function
  * Invoker. The invoker starts an HTTP server on port 8080 (configurable via
- * -Pport=NNNN) and routes every request through GcpFunctionRunner.
+ * -Pport=NNNN) and routes every request through FunctionRunner.
  *
  * Usage:
  *   ./gradlew runFunction                    # port 8080, production .bx root
@@ -297,7 +297,7 @@ test {
  */
 task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     group = "application"
-    description = "Run GCPFunctionRunner locally via the GCF Java Function Invoker"
+    description = "Run FunctionRunner locally via the GCF Java Function Invoker"
 
     // Only the invoker JAR goes on the JVM classpath; the shadow JAR is
     // passed to the invoker via --classpath so it is loaded in a child
@@ -305,9 +305,9 @@ task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     classpath = configurations.invoker
     mainClass  = "com.google.cloud.functions.invoker.runner.Invoker"
 
-    // Point the function root at the main .bx resources so handlers can be
-    // edited without rebuilding the shadow JAR.
-    def bxRoot = ( project.findProperty( 'functionRoot' ) ?: file( 'src/main/resources' ).absolutePath ).toString()
+    // Default to src/test/resources where the sample .bx handlers live locally.
+    // Override with -PfunctionRoot=<path> to point at a different directory.
+    def bxRoot = ( project.findProperty( 'functionRoot' ) ?: file( 'src/test/resources' ).absolutePath ).toString()
 
     environment 'BOXLANG_GCP_ROOT',      bxRoot
     environment 'BOXLANG_GCP_DEBUGMODE', ( project.findProperty( 'debug' ) ?: 'false' ).toString()
@@ -316,7 +316,7 @@ task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     // has finished writing its output.
     doFirst {
         args '--classpath', shadowJar.outputs.files.asPath,
-             '--target',    'ortus.boxlang.runtime.gcp.GCPFunctionRunner',
+             '--target',    'ortus.boxlang.runtime.gcp.FunctionRunner',
              '--port',      ( project.findProperty( 'port' ) ?: '8080' ).toString()
 
         println ""
