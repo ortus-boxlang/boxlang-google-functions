@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/customers",
+  "rawPath": "/customers",
+  "headers": {
+    "accept": "application/json"
+  },
+  "queryStringParameters": {},
+  "body": "",
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/customers"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "path": "/",
+  "rawPath": "/",
+  "headers": {
+    "accept": "application/json",
+    "user-agent": "workbench/1.0"
+  },
+  "queryStringParameters": {},
+  "body": "",
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/"
+    }
+  }
+}

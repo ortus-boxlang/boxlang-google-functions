@@ -1,0 +1,19 @@
+{
+  "method": "GET",
+  "path": "/products",
+  "rawPath": "/products",
+  "headers": {
+    "accept": "application/json"
+  },
+  "queryStringParameters": {
+    "page": "1",
+    "limit": "10"
+  },
+  "body": "",
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/products"
+    }
+  }
+}
