@@ -2,7 +2,7 @@
  * Hello World — minimal BoxLang Google Cloud Function example
  *
  * Deploy this file as Lambda.bx alongside the boxlang-google-functions fat JAR.
- * Set the GCF --entry-point to: ortus.boxlang.runtime.gcp.GcpFunctionRunner
+ * Set the GCF --entry-point to: ortus.boxlang.runtime.gcp.GCPFunctionRunner
  *
  * Example curl test (after local Functions Framework invocation):
  *   curl http://localhost:8080/
