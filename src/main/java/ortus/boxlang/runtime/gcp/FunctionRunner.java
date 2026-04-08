@@ -107,18 +107,18 @@ public class FunctionRunner implements HttpFunction {
 	 * The default root directory for {@code .bx} files on Google Cloud Functions
 	 * (Gen2). Used when {@code BOXLANG_GCP_ROOT} is not set.
 	 */
-	public static final String			DEFAULT_FUNCTION_ROOT	= "/workspace";
+	public static final String							DEFAULT_FUNCTION_ROOT	= "/workspace";
 
 	/**
 	 * The header clients may send to route the request to a specific method
 	 * within the resolved {@code .bx} class.
 	 */
-	protected static final Key			BOXLANG_FUNCTION_HEADER	= Key.of( "x-bx-function" );
+	protected static final Key							BOXLANG_FUNCTION_HEADER	= Key.of( "x-bx-function" );
 
 	/**
 	 * The default method executed when no {@code x-bx-function} header is present.
 	 */
-	protected static final Key			DEFAULT_FUNCTION_METHOD	= Key.run;
+	protected static final Key							DEFAULT_FUNCTION_METHOD	= Key.run;
 
 	// =========================================================================
 	// Static state (shared across warm invocations)
@@ -129,7 +129,7 @@ public class FunctionRunner implements HttpFunction {
 	 * on stdout in production (e.g. shutdown hook). Uses JUL FINE level so output
 	 * is suppressed unless the JUL handler is configured to show FINE or lower.
 	 */
-	private static final Logger							logger		= Logger.getLogger( FunctionRunner.class.getName() );
+	private static final Logger							logger					= Logger.getLogger( FunctionRunner.class.getName() );
 
 	/**
 	 * The BoxLang runtime singleton, initialized once at cold-start.
@@ -140,7 +140,7 @@ public class FunctionRunner implements HttpFunction {
 	 * Thread-safe cache of compiled BoxLang class instances, keyed by absolute
 	 * file path string. Populated atomically on first access per path.
 	 */
-	private static final Map<String, IClassRunnable>	classCache	= new ConcurrentHashMap<>();
+	private static final Map<String, IClassRunnable>	classCache				= new ConcurrentHashMap<>();
 
 	static {
 		runtime = initRuntime();
@@ -293,7 +293,7 @@ public class FunctionRunner implements HttpFunction {
 		}
 
 		// --- Default response struct (mirrors AWS Lambda shape) ---
-		IStruct					responseStruct		= Struct.of(
+		IStruct						responseStruct		= Struct.of(
 		    "statusCode", 200,
 		    "headers", Struct.of(
 		        "Content-Type", "application/json",
@@ -303,31 +303,29 @@ public class FunctionRunner implements HttpFunction {
 		);
 
 		// --- Convert HTTP request to BoxLang event struct ---
-		IStruct					eventStruct			= RequestMapper.toEventStruct( request );
+		IStruct						eventStruct			= RequestMapper.toEventStruct( request );
 
 		// --- Resolve the .bx class from the URI (falls back to Lambda.bx) ---
-		Path					resolvedClassPath	= resolveRoute( request.getPath(), this.functionRoot, this.debugMode );
-		Path					finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : defaultFunctionPath;
-
-		ResolvedFilePath		resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
-		String					resolvedPathStr		= resolvedFilePath.absolutePath().toString();
+		Path						resolvedClassPath	= resolveRoute( request.getPath(), this.functionRoot, this.debugMode );
+		Path						finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : defaultFunctionPath;
+		ResolvedFilePath			resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
+		String						resolvedPathStr		= resolvedFilePath.absolutePath().toString();
 
 		// --- Build BoxLang execution context ---
-		IBoxContext				boxContext			= new ScriptingRequestBoxContext(
+		ScriptingRequestBoxContext	boxContext			= new ScriptingRequestBoxContext(
 		    runtime.getRuntimeContext(),
-		    FileSystemUtil.createFileUri( resolvedPathStr )
+		    false
 		);
-
+		RequestBoxContext.setCurrent( boxContext );
 		// Set up request threading context and application lifecycle
-		BaseApplicationListener	listener			= boxContext.getParentOfType( RequestBoxContext.class ).getApplicationListener();
-		RequestBoxContext		requestContext		= boxContext.getParentOfType( RequestBoxContext.class );
-		RequestBoxContext.setCurrent( requestContext );
+		boxContext.loadApplicationDescriptor( FileSystemUtil.createFileUri( resolvedPathStr ) );
+		RequestBoxContext		requestContext	= boxContext.getParentOfType( RequestBoxContext.class );
+		BaseApplicationListener	listener		= requestContext.getApplicationListener();
 
 		// GCP context struct (stands in for AWS Context object)
-		IStruct		GCP_Context		= buildGcpContext( request );
-
-		Throwable	errorToHandle	= null;
-		Object		functionResult	= null;
+		IStruct					GCP_Context		= buildGcpContext( request );
+		Throwable				errorToHandle	= null;
+		Object					functionResult	= null;
 
 		try {
 			// Compile (or retrieve cached) .bx class

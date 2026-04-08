@@ -24,7 +24,6 @@ import java.util.Map;
 import com.google.cloud.functions.HttpResponse;
 
 import ortus.boxlang.runtime.dynamic.casters.StringCaster;
-import ortus.boxlang.runtime.dynamic.casters.StructCaster;
 import ortus.boxlang.runtime.types.util.JSONUtil;
 import ortus.boxlang.runtime.scopes.Key;
 import ortus.boxlang.runtime.types.IStruct;
@@ -34,7 +33,7 @@ import ortus.boxlang.runtime.types.Struct;
  * Writes a BoxLang response {@link IStruct} to a Google Cloud Functions
  * {@link HttpResponse}.
  * <p>
- * The response struct contract (shared with the AWS runtime) is:
+ * The response struct contract is:
  * <ul>
  * <li>{@code statusCode} – integer HTTP status code (default 200)</li>
  * <li>{@code headers} – a nested struct of response headers</li>
@@ -68,9 +67,11 @@ public final class ResponseMapper {
 	public static void write( IStruct responseStruct, HttpResponse response ) throws IOException {
 		// --- Status code ---
 		int		statusCode	= 200;
-		Object	statusObj	= responseStruct.get( Key.of( "statusCode" ) );
-		if ( statusObj instanceof Number ) {
-			statusCode = ( ( Number ) statusObj ).intValue();
+		Object	statusObj	= responseStruct.get( Key.statusCode );
+
+		// Accept numeric status codes or strings that can be parsed as integers; default to 200 for anything else (null, non-numeric string, etc.)
+		if ( statusObj instanceof Number castedStatus ) {
+			statusCode = castedStatus.intValue();
 		} else if ( statusObj != null ) {
 			try {
 				statusCode = Integer.parseInt( statusObj.toString() );
@@ -81,26 +82,24 @@ public final class ResponseMapper {
 		response.setStatusCode( statusCode );
 
 		// --- Headers ---
-		Object headersObj = responseStruct.getOrDefault( "headers", new Struct() );
-		if ( headersObj instanceof IStruct ) {
-			IStruct headers = StructCaster.cast( headersObj );
-			for ( Map.Entry<Key, Object> entry : headers.entrySet() ) {
+		Object headersObj = responseStruct.getOrDefault( Key.headers, new Struct() );
+		if ( headersObj instanceof IStruct castedHeaders ) {
+			for ( Map.Entry<Key, Object> entry : castedHeaders.entrySet() ) {
 				String value = StringCaster.cast( entry.getValue() );
 				response.appendHeader( entry.getKey().getName(), value );
 			}
 		}
 
 		// --- Cookies → Set-Cookie headers ---
-		Object cookiesObj = responseStruct.getOrDefault( "cookies", null );
-		if ( cookiesObj instanceof Iterable ) {
-			for ( Object cookie : ( Iterable<?> ) cookiesObj ) {
+		Object cookiesObj = responseStruct.getOrDefault( Key.cookies, null );
+		if ( cookiesObj instanceof Iterable castedCookies ) {
+			for ( Object cookie : castedCookies ) {
 				response.appendHeader( "Set-Cookie", StringCaster.cast( cookie ) );
 			}
 		}
 
 		// --- Body ---
-		Object body = responseStruct.get( Key.of( "body" ) );
-		writeBody( body, response );
+		writeBody( responseStruct.get( Key.body ), response );
 	}
 
 	/**
@@ -117,29 +116,32 @@ public final class ResponseMapper {
 	 * @throws IOException If opening the writer fails
 	 */
 	private static void writeBody( Object body, HttpResponse response ) throws IOException {
+		// No body or empty body → write nothing
 		if ( body == null ) {
 			return;
 		}
 
-		String bodyStr;
-		if ( body instanceof String ) {
-			bodyStr = ( String ) body;
+		String bodyOutput;
+		if ( body instanceof String castedBody ) {
+			bodyOutput = castedBody;
 		} else {
 			// Struct, Array, or any other BoxLang type → serialize to JSON
 			try {
-				bodyStr = JSONUtil.getJSONBuilder().asString( body );
+				bodyOutput = JSONUtil.getJSONBuilder().asString( body );
 			} catch ( Exception e ) {
 				// Last-resort fallback
-				bodyStr = body.toString();
+				bodyOutput = body.toString();
 			}
 		}
 
-		if ( bodyStr.isEmpty() ) {
+		// Don't write anything if the body is empty after serialization (e.g. empty struct/array)
+		if ( bodyOutput.isEmpty() ) {
 			return;
 		}
 
+		// Write the body string to the response writer
 		try ( BufferedWriter writer = response.getWriter() ) {
-			writer.write( bodyStr );
+			writer.write( bodyOutput );
 		}
 	}
 }
