@@ -49,7 +49,7 @@ public class HandlerCacheTest {
 	}
 
 	@Test
-	@DisplayName( "Compiles Lambda.bx on first access (cold invocation)" )
+	@DisplayName( "Compiles Lambda.bx on first access and caches it (cold invocation, production mode)" )
 	public void testColdCompilation() {
 		Path				path		= Path.of( "src", "test", "resources", "Lambda.bx" ).toAbsolutePath();
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
@@ -57,15 +57,29 @@ public class HandlerCacheTest {
 
 		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isFalse();
 
-		IClassRunnable compiled = FunctionRunner.getOrCompileHandler( resolved, context, true );
+		IClassRunnable compiled = FunctionRunner.getOrCompileHandler( resolved, context, false );
 
 		assertThat( compiled ).isNotNull();
 		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isTrue();
 	}
 
 	@Test
-	@DisplayName( "Returns the same instance on subsequent warm invocations" )
+	@DisplayName( "Returns the same instance on subsequent warm invocations (production mode)" )
 	public void testWarmInvocationReturnsCachedInstance() {
+		Path				path		= Path.of( "src", "test", "resources", "Lambda.bx" ).toAbsolutePath();
+		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
+		IBoxContext			context		= buildContext( path );
+
+		IClassRunnable		first		= FunctionRunner.getOrCompileHandler( resolved, context, false );
+		IClassRunnable		second		= FunctionRunner.getOrCompileHandler( resolved, context, false );
+
+		// Same reference — no recompilation on warm call
+		assertThat( first ).isSameInstanceAs( second );
+	}
+
+	@Test
+	@DisplayName( "Debug mode skips cache — always recompiles" )
+	public void testDebugModeSkipsCache() {
 		Path				path		= Path.of( "src", "test", "resources", "Lambda.bx" ).toAbsolutePath();
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
@@ -73,8 +87,9 @@ public class HandlerCacheTest {
 		IClassRunnable		first		= FunctionRunner.getOrCompileHandler( resolved, context, true );
 		IClassRunnable		second		= FunctionRunner.getOrCompileHandler( resolved, context, true );
 
-		// Same reference — no recompilation on warm call
-		assertThat( first ).isSameInstanceAs( second );
+		// Always a fresh compile — never cached in debug mode
+		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isFalse();
+		assertThat( first ).isNotSameInstanceAs( second );
 	}
 
 	@Test
