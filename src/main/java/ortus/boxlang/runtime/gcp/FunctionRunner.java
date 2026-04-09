@@ -417,14 +417,18 @@ public class FunctionRunner implements HttpFunction {
 	 */
 	static IClassRunnable getOrCompileHandler( ResolvedFilePath resolvedPath, IBoxContext context, boolean debugMode ) {
 		String cacheKey = resolvedPath.absolutePath().toString();
-		return classCache.computeIfAbsent( cacheKey, k -> {
-			if ( debugMode ) {
-				System.out.println( "[BoxLang GCP] Compiling: " + k );
-			}
+
+		// In debug mode, skip the cache entirely to ensure changes to .bx files are picked up immediately.
+		if ( debugMode ) {
+			System.out.println( "[BoxLang GCP] Compiling (no cache in debug mode): " + cacheKey );
 			return ( IClassRunnable ) DynamicObject.of(
 			    RunnableLoader.getInstance().loadClass( resolvedPath, context )
 			).invokeConstructor( context ).getTargetInstance();
-		} );
+		}
+
+		return classCache.computeIfAbsent( cacheKey, k -> ( IClassRunnable ) DynamicObject.of(
+		    RunnableLoader.getInstance().loadClass( resolvedPath, context )
+		).invokeConstructor( context ).getTargetInstance() );
 	}
 
 	/**

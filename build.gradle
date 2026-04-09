@@ -54,14 +54,14 @@ configurations {
 dependencies {
 	// LOCAL DEVELOPMENT ONLY
 	// CHOOSE THE RIGHT LOCATION FOR YOUR LOCAL DEPENDENCIES
-//   if ( file( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' ).exists() ) {
-// 		implementation files( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' )
-// 		implementation files( '../boxlang-web-support/build/distributions/boxlang-web-support-' + boxlangVersion + '.jar' )
-// 	} else {
+ 	 if ( file( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' ).exists() ) {
+		implementation files( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' )
+		implementation files( '../boxlang-web-support/build/distributions/boxlang-web-support-' + boxlangVersion + '.jar' )
+	} else {
 		// Downloaded Dependencies
 		implementation files( 'src/test/resources/libs/boxlang-web-support-' + boxlangVersion + '.jar' )
 		implementation files( 'src/test/resources/libs/boxlang-' + boxlangVersion + '.jar' )
-	// }
+	}
 
     // Google Cloud Functions Framework API (provided by GCF runtime — compileOnly keeps it out of the fat JAR)
     compileOnly 'com.google.cloud.functions:functions-framework-api:1.1.0'
@@ -419,11 +419,11 @@ test {
 
 /**
  * Run the Google Cloud Function locally using the official GCF Java Function
- * Invoker. The invoker starts an HTTP server on port 8080 (configurable via
+ * Invoker. The invoker starts an HTTP server on port 9099 (configurable via
  * -Pport=NNNN) and routes every request through FunctionRunner.
  *
  * Usage:
- *   ./gradlew runFunction                    # port 8080, production .bx root
+ *   ./gradlew runFunction                    # port 9099, production .bx root
  *   ./gradlew runFunction -Pport=9090        # custom port
  *   ./gradlew runFunction -Pdebug=true       # enable BoxLang verbose logging
  *   ./gradlew runFunction -PfunctionRoot=... # custom .bx root directory
@@ -446,21 +446,21 @@ task runFunction( type: JavaExec, dependsOn: shadowJar ) {
     def bxRoot = ( project.findProperty( 'functionRoot' ) ?: file( 'src/test/resources' ).absolutePath ).toString()
 
     environment 'BOXLANG_GCP_ROOT',      bxRoot
-    environment 'BOXLANG_GCP_DEBUGMODE', ( project.findProperty( 'debug' ) ?: 'false' ).toString()
+    environment 'BOXLANG_GCP_DEBUGMODE', ( project.findProperty( 'debugMode' ) ?: 'false' ).toString()
 
     // Resolve the shadow JAR path inside doFirst so it runs after shadowJar
     // has finished writing its output.
     doFirst {
         args '--classpath', shadowJar.outputs.files.asPath,
              '--target',    'ortus.boxlang.runtime.gcp.FunctionRunner',
-             '--port',      ( project.findProperty( 'port' ) ?: '8080' ).toString()
+             '--port',      ( project.findProperty( 'testPort' ) ?: '9099' ).toString()
 
         println ""
         println "================================================================"
         println " BoxLang GCF Function Invoker"
-        println " Listening on  : http://localhost:${project.findProperty( 'port' ) ?: '8080'}"
+        println " Listening on  : http://localhost:${project.findProperty( 'testPort' ) ?: '9099'}"
         println " Function root : ${bxRoot}"
-        println " Debug mode    : ${project.findProperty( 'debug' ) ?: 'false'}"
+        println " Debug mode    : ${project.findProperty( 'debugMode' ) ?: 'false'}"
         println " Press Ctrl+C to stop."
         println "================================================================"
         println ""
