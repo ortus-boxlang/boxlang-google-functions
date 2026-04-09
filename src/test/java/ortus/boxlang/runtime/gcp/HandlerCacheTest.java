@@ -57,7 +57,7 @@ public class HandlerCacheTest {
 
 		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isFalse();
 
-		IClassRunnable compiled = FunctionRunner.loadHandler( resolved, context, true );
+		IClassRunnable compiled = FunctionRunner.getOrCompileHandler( resolved, context, true );
 
 		assertThat( compiled ).isNotNull();
 		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isTrue();
@@ -70,8 +70,8 @@ public class HandlerCacheTest {
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
 
-		IClassRunnable		first		= FunctionRunner.loadHandler( resolved, context, true );
-		IClassRunnable		second		= FunctionRunner.loadHandler( resolved, context, true );
+		IClassRunnable		first		= FunctionRunner.getOrCompileHandler( resolved, context, true );
+		IClassRunnable		second		= FunctionRunner.getOrCompileHandler( resolved, context, true );
 
 		// Same reference — no recompilation on warm call
 		assertThat( first ).isSameInstanceAs( second );
@@ -85,8 +85,8 @@ public class HandlerCacheTest {
 		IBoxContext		lambdaCtx		= buildContext( lambdaPath );
 		IBoxContext		productsCtx		= buildContext( productsPath );
 
-		IClassRunnable	lambda			= FunctionRunner.loadHandler( ResolvedFilePath.of( lambdaPath ), lambdaCtx, false );
-		IClassRunnable	products		= FunctionRunner.loadHandler( ResolvedFilePath.of( productsPath ), productsCtx, false );
+		IClassRunnable	lambda			= FunctionRunner.getOrCompileHandler( ResolvedFilePath.of( lambdaPath ), lambdaCtx, false );
+		IClassRunnable	products		= FunctionRunner.getOrCompileHandler( ResolvedFilePath.of( productsPath ), productsCtx, false );
 
 		assertThat( lambda ).isNotNull();
 		assertThat( products ).isNotNull();
@@ -102,7 +102,7 @@ public class HandlerCacheTest {
 		ResolvedFilePath	resolved	= ResolvedFilePath.of( path );
 		IBoxContext			context		= buildContext( path );
 
-		FunctionRunner.loadHandler( resolved, context, false );
+		FunctionRunner.getOrCompileHandler( resolved, context, false );
 		assertThat( FunctionRunner.isHandlerCached( path.toString() ) ).isTrue();
 
 		FunctionRunner.clearHandlerCache();
@@ -118,7 +118,7 @@ public class HandlerCacheTest {
 		IBoxContext			context		= buildContext( badPath );
 
 		try {
-			FunctionRunner.loadHandler( resolved, context, false );
+			FunctionRunner.getOrCompileHandler( resolved, context, false );
 			throw new AssertionError( "Expected an exception for a non-existent .bx file" );
 		} catch ( Exception e ) {
 			// Expected — BoxLang cannot load a file that doesn't exist

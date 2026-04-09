@@ -27,22 +27,23 @@ import com.google.cloud.functions.HttpFunction;
 import com.google.cloud.functions.HttpRequest;
 import com.google.cloud.functions.HttpResponse;
 
-import ortus.boxlang.runtime.BoxRuntime;
 import ortus.boxlang.runtime.application.BaseApplicationListener;
+import ortus.boxlang.runtime.BoxRuntime;
 import ortus.boxlang.runtime.context.IBoxContext;
 import ortus.boxlang.runtime.context.RequestBoxContext;
 import ortus.boxlang.runtime.context.ScriptingRequestBoxContext;
 import ortus.boxlang.runtime.dynamic.casters.StringCaster;
 import ortus.boxlang.runtime.dynamic.casters.StructCaster;
+import ortus.boxlang.runtime.gcp.util.KeyDictionary;
 import ortus.boxlang.runtime.interop.DynamicObject;
 import ortus.boxlang.runtime.runnables.IClassRunnable;
 import ortus.boxlang.runtime.runnables.RunnableLoader;
 import ortus.boxlang.runtime.scopes.Key;
 import ortus.boxlang.runtime.types.Array;
-import ortus.boxlang.runtime.types.IStruct;
-import ortus.boxlang.runtime.types.Struct;
 import ortus.boxlang.runtime.types.exceptions.AbortException;
 import ortus.boxlang.runtime.types.exceptions.ExceptionUtil;
+import ortus.boxlang.runtime.types.IStruct;
+import ortus.boxlang.runtime.types.Struct;
 import ortus.boxlang.runtime.types.util.StringUtil;
 import ortus.boxlang.runtime.util.FileSystemUtil;
 import ortus.boxlang.runtime.util.ResolvedFilePath;
@@ -143,27 +144,6 @@ public class FunctionRunner implements HttpFunction {
 	private static final Map<String, IClassRunnable>	classCache				= new ConcurrentHashMap<>();
 
 	static {
-		runtime = initRuntime();
-
-		// Gracefully shut down the runtime when GCF terminates the container.
-		Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-			logger.fine( "[BoxLang GCP] ShutdownHook triggered — shutting down runtime..." );
-			runtime.shutdown();
-			logger.fine( "[BoxLang GCP] Runtime shut down cleanly." );
-		} ) );
-	}
-
-	/**
-	 * Initialize the BoxLang runtime at cold-start.
-	 * <p>
-	 * Reads environment variables, locates an optional {@code boxlang.json}
-	 * configuration file, and calls {@link BoxRuntime#getInstance} which returns
-	 * (or creates) the singleton. {@code waitForStart()} blocks until the runtime
-	 * is fully ready to serve requests.
-	 *
-	 * @return The initialized {@link BoxRuntime} singleton
-	 */
-	private static BoxRuntime initRuntime() {
 		Map<String, String>	env				= System.getenv();
 		boolean				debugMode		= Boolean.parseBoolean( env.getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
 		String				functionRoot	= env.getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
@@ -176,6 +156,7 @@ public class FunctionRunner implements HttpFunction {
 			configPath = Path.of( functionRoot, "boxlang.json" ).toString();
 		}
 
+		// Log the resolved configuration on cold start when debug mode is enabled.
 		if ( debugMode ) {
 			System.out.println( "[BoxLang GCP] Initializing runtime (function root: " + functionRoot + ")" );
 			if ( configPath != null ) {
@@ -185,7 +166,14 @@ public class FunctionRunner implements HttpFunction {
 
 		// Use the system temp directory as BoxLang's working directory since
 		// the /workspace filesystem on GCF is read-only during execution.
-		return BoxRuntime.getInstance( debugMode, configPath, System.getProperty( "java.io.tmpdir" ) ).waitForStart();
+		runtime = BoxRuntime.getInstance( debugMode, configPath, System.getProperty( "java.io.tmpdir" ) ).waitForStart();
+
+		// Gracefully shut down the runtime when GCF terminates the container.
+		Runtime.getRuntime().addShutdownHook( new Thread( () -> {
+			System.out.println( "[BoxLang GCP] ShutdownHook triggered — shutting down runtime..." );
+			runtime.shutdown();
+			System.out.println( "[BoxLang GCP] Runtime shut down cleanly." );
+		} ) );
 	}
 
 	// =========================================================================
@@ -221,28 +209,6 @@ public class FunctionRunner implements HttpFunction {
 	}
 
 	/**
-	 * Resolve the default {@code .bx} handler path from environment variables.
-	 * Honors {@code BOXLANG_GCP_CLASS} as an override; otherwise builds
-	 * {@code Lambda.bx} under the configured function root.
-	 */
-	private static Path resolveDefaultFunctionPath() {
-		Map<String, String>	env				= System.getenv();
-		String				classOverride	= env.get( "BOXLANG_GCP_CLASS" );
-		if ( classOverride != null ) {
-			return Path.of( classOverride ).toAbsolutePath();
-		}
-		String functionRoot = env.getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
-		return Path.of( functionRoot, "Lambda.bx" );
-	}
-
-	/**
-	 * Resolve the debug mode flag from environment variables.
-	 */
-	private static boolean resolveDebugMode() {
-		return Boolean.parseBoolean( System.getenv().getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
-	}
-
-	/**
 	 * Constructor for tests and local tooling — accepts explicit path and debug flag.
 	 * Also serves as the delegation target for the no-arg constructor.
 	 *
@@ -265,6 +231,32 @@ public class FunctionRunner implements HttpFunction {
 			System.out.println( "[BoxLang GCP] Configured with path: " + this.defaultFunctionPath );
 			System.out.println( "[BoxLang GCP] Function root: " + this.functionRoot );
 		}
+	}
+
+	// =========================================================================
+	// Constructor Helpers
+	// =========================================================================
+
+	/**
+	 * Resolve the default {@code .bx} handler path from environment variables.
+	 * Honors {@code BOXLANG_GCP_CLASS} as an override; otherwise builds
+	 * {@code Lambda.bx} under the configured function root.
+	 */
+	private static Path resolveDefaultFunctionPath() {
+		Map<String, String>	env				= System.getenv();
+		String				classOverride	= env.get( "BOXLANG_GCP_CLASS" );
+		if ( classOverride != null ) {
+			return Path.of( classOverride ).toAbsolutePath();
+		}
+		String functionRoot = env.getOrDefault( "BOXLANG_GCP_ROOT", DEFAULT_FUNCTION_ROOT );
+		return Path.of( functionRoot, "Lambda.bx" );
+	}
+
+	/**
+	 * Resolve the debug mode flag from environment variables.
+	 */
+	private static boolean resolveDebugMode() {
+		return Boolean.parseBoolean( System.getenv().getOrDefault( "BOXLANG_GCP_DEBUGMODE", "false" ) );
 	}
 
 	// =========================================================================
@@ -294,12 +286,12 @@ public class FunctionRunner implements HttpFunction {
 
 		// --- Default response struct (mirrors AWS Lambda shape) ---
 		IStruct						responseStruct		= Struct.of(
-		    "statusCode", 200,
-		    "headers", Struct.of(
-		        "Content-Type", "application/json",
-		        "Access-Control-Allow-Origin", "*" ),
-		    "body", "",
-		    "cookies", new Array()
+		    Key.statusCode, 200,
+		    Key.headers, Struct.of(
+		        KeyDictionary.contentType, "application/json",
+		        KeyDictionary.accessControlAllowOrigin, "*" ),
+		    Key.body, "",
+		    Key.cookies, new Array()
 		);
 
 		// --- Convert HTTP request to BoxLang event struct ---
@@ -307,9 +299,9 @@ public class FunctionRunner implements HttpFunction {
 
 		// --- Resolve the .bx class from the URI (falls back to Lambda.bx) ---
 		Path						resolvedClassPath	= resolveRoute( request.getPath(), this.functionRoot, this.debugMode );
-		Path						finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : defaultFunctionPath;
-		ResolvedFilePath			resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
-		String						resolvedPathStr		= resolvedFilePath.absolutePath().toString();
+		final Path					finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : this.defaultFunctionPath;
+		final ResolvedFilePath		resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
+		final String				resolvedPathStr		= resolvedFilePath.absolutePath().toString();
 
 		// --- Build BoxLang execution context ---
 		ScriptingRequestBoxContext	boxContext			= new ScriptingRequestBoxContext(
@@ -323,25 +315,25 @@ public class FunctionRunner implements HttpFunction {
 		BaseApplicationListener	listener		= requestContext.getApplicationListener();
 
 		// GCP context struct (stands in for AWS Context object)
-		IStruct					GCP_Context		= buildGcpContext( request );
+		IStruct					gcpContext		= buildGcpContext( request );
 		Throwable				errorToHandle	= null;
 		Object					functionResult	= null;
 
 		try {
 			// Compile (or retrieve cached) .bx class
-			IClassRunnable function = loadHandler( resolvedFilePath, boxContext, debugMode );
+			IClassRunnable function = getOrCompileHandler( resolvedFilePath, boxContext, debugMode );
 
 			// Determine which method to invoke
 			Key functionMethod = getFunctionMethod( eventStruct );
 
 			// Application lifecycle: onRequestStart
-			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
+			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
 
 			// Invoke the BoxLang handler method
 			functionResult = function.dereferenceAndInvoke(
 			    boxContext,
 			    functionMethod,
-			    new Object[] { eventStruct, GCP_Context, responseStruct },
+			    new Object[] { eventStruct, gcpContext, responseStruct },
 			    false
 			);
 
@@ -352,7 +344,7 @@ public class FunctionRunner implements HttpFunction {
 			}
 
 			try {
-				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
+				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
 			} catch ( Throwable ae ) {
 				errorToHandle = ae;
 			}
@@ -371,7 +363,7 @@ public class FunctionRunner implements HttpFunction {
 
 			// Application lifecycle: onRequestEnd
 			try {
-				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, GCP_Context } );
+				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
 			} catch ( Throwable e ) {
 				errorToHandle = e;
 			}
@@ -383,7 +375,7 @@ public class FunctionRunner implements HttpFunction {
 				System.err.println( "[BoxLang GCP] Error: " + errorToHandle.getMessage() );
 
 				try {
-					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, GCP_Context } ) ) {
+					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, gcpContext } ) ) {
 						throw errorToHandle;
 					}
 				} catch ( Throwable t ) {
@@ -423,7 +415,7 @@ public class FunctionRunner implements HttpFunction {
 	 *
 	 * @return A ready-to-invoke {@link IClassRunnable} instance
 	 */
-	static IClassRunnable loadHandler( ResolvedFilePath resolvedPath, IBoxContext context, boolean debugMode ) {
+	static IClassRunnable getOrCompileHandler( ResolvedFilePath resolvedPath, IBoxContext context, boolean debugMode ) {
 		String cacheKey = resolvedPath.absolutePath().toString();
 		return classCache.computeIfAbsent( cacheKey, k -> {
 			if ( debugMode ) {
@@ -470,6 +462,7 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The absolute {@link Path} to the resolved class file, or {@code null}
 	 */
 	static Path resolveRoute( String uriPath, String functionRoot, boolean debugMode ) {
+		// Handle root-level and empty paths by returning null to trigger the default handler.
 		if ( uriPath == null || uriPath.isEmpty() || uriPath.equals( "/" ) ) {
 			return null;
 		}
@@ -477,6 +470,7 @@ public class FunctionRunner implements HttpFunction {
 		String		cleanPath		= uriPath.startsWith( "/" ) ? uriPath.substring( 1 ) : uriPath;
 		String[]	pathSegments	= cleanPath.split( "/" );
 
+		// If the first segment is empty, treat it as root-level and return null to trigger the default handler.
 		if ( pathSegments.length == 0 || pathSegments[ 0 ].isEmpty() ) {
 			return null;
 		}
@@ -509,7 +503,7 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The {@link Key} of the method to invoke
 	 */
 	protected Key getFunctionMethod( IStruct event ) {
-		IStruct headers = StructCaster.cast( event.getOrDefault( "headers", new Struct() ) );
+		IStruct headers = event.getAsStruct( Key.headers );
 
 		if ( headers.containsKey( BOXLANG_FUNCTION_HEADER ) ) {
 			String headerValue = StringCaster.cast( headers.get( BOXLANG_FUNCTION_HEADER ) );
@@ -532,10 +526,10 @@ public class FunctionRunner implements HttpFunction {
 	protected IStruct buildGcpContext( HttpRequest request ) {
 		Map<String, String> env = System.getenv();
 		return Struct.of(
-		    "functionName", env.getOrDefault( "K_SERVICE", "unknown" ),
-		    "functionVersion", env.getOrDefault( "K_REVISION", "latest" ),
-		    "projectId", env.getOrDefault( "GOOGLE_CLOUD_PROJECT", env.getOrDefault( "GCLOUD_PROJECT", "unknown" ) ),
-		    "requestId", UUID.randomUUID().toString()
+		    KeyDictionary.functionName, env.getOrDefault( "K_SERVICE", "unknown" ),
+		    KeyDictionary.functionVersion, env.getOrDefault( "K_REVISION", "latest" ),
+		    KeyDictionary.projectId, env.getOrDefault( "GOOGLE_CLOUD_PROJECT", env.getOrDefault( "GCLOUD_PROJECT", "unknown" ) ),
+		    KeyDictionary.requestId, UUID.randomUUID().toString()
 		);
 	}
 
@@ -550,7 +544,7 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The absolute path to {@code Lambda.bx} (or the configured override)
 	 */
 	public Path getDefaultFunctionPath() {
-		return defaultFunctionPath;
+		return this.defaultFunctionPath;
 	}
 
 	/**
@@ -559,7 +553,7 @@ public class FunctionRunner implements HttpFunction {
 	 * @return {@code true} if verbose diagnostic logging is enabled
 	 */
 	public boolean inDebugMode() {
-		return debugMode;
+		return this.debugMode;
 	}
 
 	/**

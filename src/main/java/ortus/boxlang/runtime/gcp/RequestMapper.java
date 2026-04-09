@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 
 import com.google.cloud.functions.HttpRequest;
 
+import ortus.boxlang.runtime.gcp.util.KeyDictionary;
+import ortus.boxlang.runtime.scopes.Key;
 import ortus.boxlang.runtime.types.IStruct;
 import ortus.boxlang.runtime.types.Struct;
 
@@ -72,10 +74,8 @@ public final class RequestMapper {
 	 * @param request The incoming HTTP request from the GCF functions-framework
 	 *
 	 * @return A BoxLang {@link IStruct} containing all relevant request fields
-	 *
-	 * @throws IOException If reading the request body fails
 	 */
-	public static IStruct toEventStruct( HttpRequest request ) throws IOException {
+	public static IStruct toEventStruct( HttpRequest request ) {
 		// --- Headers (lowercase keys, first-value wins for multi-value) ---
 		IStruct headersStruct = new Struct();
 		for ( Map.Entry<String, List<String>> entry : request.getHeaders().entrySet() ) {
@@ -91,23 +91,22 @@ public final class RequestMapper {
 		}
 
 		// --- Body ---
-		String	body			= readBody( request );
+		String	body		= readBody( request );
 
 		// --- requestContext mirrors AWS API Gateway v2.0 HTTP context ---
-		IStruct	httpContext		= Struct.of(
-		    "method", request.getMethod(),
-		    "path", request.getPath()
+		IStruct	httpContext	= Struct.of(
+		    Key.method, request.getMethod(),
+		    Key.path, request.getPath()
 		);
-		IStruct	requestContext	= Struct.of( "http", httpContext );
 
 		return Struct.of(
-		    "method", request.getMethod(),
-		    "path", request.getPath(),
-		    "rawPath", request.getPath(),
-		    "queryStringParameters", queryParams,
-		    "headers", headersStruct,
-		    "body", body,
-		    "requestContext", requestContext
+		    Key.method, request.getMethod(),
+		    Key.path, request.getPath(),
+		    KeyDictionary.rawPath, request.getPath(),
+		    KeyDictionary.queryStringParameters, queryParams,
+		    Key.headers, headersStruct,
+		    Key.body, body,
+		    KeyDictionary.requestContext, Struct.of( Key.HTTP, httpContext )
 		);
 	}
 
