@@ -109,13 +109,13 @@ Expected output:
 ================================================================
  BoxLang GCF Function Invoker
  Listening on  : http://localhost:9099
- Function root : .../src/test/resources
- Debug mode    : false
+ Function root : .../src/main/bx
+ Debug mode    : true
  Press Ctrl+C to stop.
 ================================================================
 ```
 
-The function root defaults to `src/test/resources` during local development so you can edit `.bx` files and restart without rebuilding the JAR.
+The function root defaults to `src/main/bx` during local development so you can edit `.bx` files and restart without rebuilding the JAR.  If you set `debugMode` to `false` then you won't see any hot-reloading. Changes to `.bx` files will only be picked up on server restart when debug mode is disabled.
 
 ---
 
@@ -440,7 +440,7 @@ FunctionRunner  ← implements HttpFunction
 ## Notes
 
 - **Handler portability:** The event struct shape intentionally mirrors the AWS API Gateway v2.0 format. Handler files that run on the BoxLang AWS Lambda runtime can be deployed to GCF with no modification in most cases.
-- **Sample handlers:** The `src/test/resources/` directory contains working sample handlers (`Lambda.bx`, `Products.bx`, `Customers.bx`) used for local development and testing.
+- **Sample handlers:** The `src/main/bx/` directory contains working sample handlers (`Lambda.bx`, `Products.bx`, `Customers.bx`) used for local development and testing.
 - **Production handlers:** For production deployments, place your `.bx` handler files in `src/main/resources/` or any directory reachable at runtime, and configure `BOXLANG_GCP_ROOT` accordingly.
 - **BoxLang modules:** You can use any BoxLang module with this runtime by including it in the deployed filesystem and configuring the BoxLang runtime to load it via a `boxlang.json` configuration file pointed to by `BOXLANG_GCP_CONFIG`.
 - **GCF filesystem:** The `/workspace` directory on GCF Gen2 is read-only during execution. The runtime uses the JVM temp directory (`java.io.tmpdir`) as BoxLang's working directory.
