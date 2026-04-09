@@ -1,328 +1,427 @@
-# BoxLang Google Cloud Functions Runtime (GCF)
-
-## Overview
-
-This repository contains an initial implementation of a **BoxLang runtime adapter for Google Cloud Functions (Gen2)**.
-
-The goal of this project is to replicate the core runtime behavior of the existing `boxlang-aws-lambda` runtime but adapted for the **Google Cloud Functions HTTP runtime using Java 21**.
-
-The runtime allows `.bx` BoxLang handler files to be executed as serverless endpoints inside Google Cloud Functions.
-
-This implementation focuses on:
-
-- Translating GCF HTTP requests into a BoxLang-compatible event structure
-- Executing `.bx` handler classes dynamically
-- Routing requests based on URI paths
-- Mapping BoxLang responses back into HTTP responses
-
-The repository is currently intended for **engineering review and iteration** and may evolve based on feedback.
-
----
-
-## Current Implementation Scope
-
-The runtime currently supports:
-
-- Execution of BoxLang `.bx` handlers inside Google Cloud Functions
-- URI-based routing to handler classes
-- Dynamic compilation and caching of `.bx` files
-- Mapping of HTTP requests into BoxLang event structs
-- Serialization of BoxLang response structs back to HTTP responses
-- Local development using the GCF Java Function Invoker
-- Deployment to Google Cloud Functions Gen2
-
-This implementation mirrors the behavior of the AWS runtime where possible so that handler code remains portable.
-
----
-
-## Architecture Summary
-
-The runtime is composed of several focused components:
-
-| Component | Responsibility |
-|---|---|
-| `FunctionRunner` | Main GCF entrypoint (`HttpFunction`); orchestrates all layers including URI routing and handler compilation/caching |
-| `RequestMapper` | Converts `HttpRequest` → BoxLang event struct |
-| `ResponseMapper` | Converts BoxLang response structs → HTTP response |
-
----
-
-## Request / Response Flow
+# ⚡︎ BoxLang Google Cloud Functions Runtime
 
 ```
-HTTP Request
-│
-▼
-Google Cloud Functions (Gen2)
-│
-▼
-FunctionRunner
-│
-▼
-RequestMapper
-│
-▼
-BoxLang Runtime
-│
-▼
-Lambda.bx / Products.bx / Customers.bx
-│
-▼
-ResponseMapper
-│
-▼
-HTTP JSON Response
+|:------------------------------------------------------:|
+| ⚡︎ B o x L a n g ⚡︎
+| Dynamic : Modular : Productive
+|:------------------------------------------------------:|
 ```
 
-The runtime compiles `.bx` files dynamically and caches the compiled classes for reuse across warm invocations.
+<blockquote>
+	Copyright Since 2023 by Ortus Solutions, Corp
+	<br>
+	<a href="https://www.boxlang.io">www.boxlang.io</a> |
+	<a href="https://www.ortussolutions.com">www.ortussolutions.com</a>
+</blockquote>
 
----
+<p>&nbsp;</p>
 
-## URI Routing Behavior
+## 🚀 Welcome to the BoxLang Google Cloud Functions Runtime
 
-Requests are routed automatically based on the first path segment.
+This repository contains the **core Google Cloud Functions Runtime** for the BoxLang language. This runtime acts as a bridge between GCF's Java 21 runtime and BoxLang's dynamic language features, enabling BoxLang code execution in serverless environments on Google Cloud.
 
-| Request Path | Handler |
-|---|---|
-| `/` | `Lambda.bx` |
-| `/products` | `Products.bx` |
-| `/customers` | `Customers.bx` |
-| `/products/42` | `Products.bx` |
+**✨ Key Features:**
 
-If no matching handler exists, the runtime falls back to `Lambda.bx`.
+- **🎯 Automatic URI Routing** - Route requests to specific BoxLang classes based on URI paths
+- **⚡ Performance Optimized** - Class compilation caching for warm invocations
+- **☁️ GCF Native** - Built on the official GCF Functions Framework for Java
+- **🧪 Developer Friendly** - Live reloading in debug mode, local dev server, and smoke tests
 
----
+> 💡 **For creating GCF projects**: Use our [BoxLang GCF Template](https://github.com/ortus-boxlang/boxlang-starter-google-functions) to quickly bootstrap new serverless applications.
 
-## Handler Convention
+## 🏗️ Architecture Overview
 
-Handlers are implemented as BoxLang classes exposing a `run()` method.
+The runtime consists of:
 
-Example handler:
+- **`ortus.boxlang.runtime.gcp.FunctionRunner`** - Main GCF `HttpFunction` entry point
+- **`RequestMapper`** - Converts `HttpRequest` → BoxLang event struct
+- **`ResponseMapper`** - Serializes BoxLang response struct → GCF `HttpResponse`
+- **Dynamic Class Compilation** - Compiles `.bx` files on-demand with intelligent caching
+- **Convention-based Routing** - Routes requests to `Lambda.bx` or a URI-matched `.bx` file
 
-```boxlang
+### Runtime Flow
+
+1. **Static Initialization** - BoxLang runtime loads once per GCF container instance
+2. **URI-based Class Resolution** - Automatically routes requests to specific BoxLang classes based on URI path
+3. **Class Compilation** - `.bx` files are compiled and cached for warm invocations (skipped in debug mode)
+4. **Method Resolution** - Discovers target method via convention or `x-bx-function` header
+5. **Application Lifecycle** - Full `Application.bx` lifecycle with `onRequestStart`/`onRequestEnd`
+6. **Response Marshalling** - Converts BoxLang response struct to GCF HTTP response
+
+## 🎯 URI-Based Routing
+
+The runtime supports **automatic class routing** based on incoming URI paths, making it easy to build multi-resource APIs without any configuration.
+
+### How It Works
+
+When a request comes in, the runtime:
+
+1. **Extracts the first URI path segment** from the request path
+2. **Converts it to PascalCase** using BoxLang's built-in `StringUtil`
+3. **Looks for a matching `.bx` file** in the configured function root (`BOXLANG_GCP_ROOT`)
+4. **Falls back to `Lambda.bx`** if no specific class is found
+
+### URI to Class Mapping Examples
+
+| Incoming URI | BoxLang Class | Description |
+|---|---|---|
+| `/products` | `Products.bx` | Product management endpoints |
+| `/customers` | `Customers.bx` | Customer management endpoints |
+| `/user-profiles` | `UserProfiles.bx` | Handles hyphenated URIs |
+| `/api_endpoints` | `ApiEndpoints.bx` | Handles underscored URIs |
+| `/orders/123` | `Orders.bx` | Routes based on first segment only |
+| `/` | `Lambda.bx` | Root requests use default handler |
+| `/unknown/path` | `Lambda.bx` | Falls back to default when class not found |
+
+### Creating Route Classes
+
+Simply create a `.bx` file with the PascalCase name of your resource:
+
+```java
+// Products.bx - Handles all /products/* requests
 class {
-
     function run( event, context, response ) {
-
-        return {
-            "message": "Hello from BoxLang"
-        };
-
+        switch( event.method ?: "GET" ) {
+            case "GET":
+                return getAllProducts()
+                break
+            case "POST":
+                return createProduct( event.body )
+                break
+            default:
+                response.statusCode = 405
+                return { "error": "Method not allowed" }
+        }
     }
 
+    private function getAllProducts() {
+        return {
+            "message": "Fetching all products",
+            "data": [
+                { "id": 1, "name": "Product 1", "price": 29.99 }
+            ]
+        }
+    }
 }
 ```
 
-### Parameters
+### Multi-Method Support
 
-| Parameter | Description |
-|---|---|
-| `event` | Request data struct |
-| `context` | Runtime metadata |
-| `response` | Mutable response struct |
-
----
-
-## Project Structure
-
-```
-boxlang-google-functions
-│
-├── src/main/java/ortus/boxlang/runtime/gcp
-│   ├── FunctionRunner.java
-│   ├── RequestMapper.java
-│   └── ResponseMapper.java
-│
-├── src/test/resources
-│   ├── Lambda.bx
-│   ├── Products.bx
-│   └── Customers.bx
-│
-├── workbench
-│   └── simple-test.sh
-│
-├── build.gradle
-└── README.md
-```
-
-```
-Note: During local development, sample `.bx` handlers are loaded from `src/test/resources`.  
-In production deployments, handlers should be placed in `src/main/resources` or another directory specified via `BOXLANG_GCP_ROOT`.
-```
-
----
-
-## Build Instructions
-
-Run tests:
+You can use the `x-bx-function` header to call a specific method within a route class:
 
 ```bash
+# Call the default 'run' method
+curl -X GET /products
+
+# Call a custom method
+curl -X GET /products -H "x-bx-function: getActiveProducts"
+```
+
+### Benefits
+
+- **🚀 Zero Configuration** - Just create `.bx` files, no routing setup required
+- **📁 Clean Organization** - Separate classes for different resources/domains
+- **🔄 Backward Compatible** - Existing `Lambda.bx` files continue to work
+- **⚡ Performance Optimized** - Classes are compiled once and cached on warm invocations
+- **🧪 Easy Testing** - Test individual resource classes in isolation
+
+## 🛠️ Development Setup
+
+### Prerequisites
+
+- **Java 21+** - Required for BoxLang runtime
+- **Google Cloud CLI** - For deployment and project management
+- **Docker** *(optional)* - For containerized local testing
+
+### Local Development
+
+```bash
+# Clone the runtime repository
+git clone https://github.com/ortus-boxlang/boxlang-google-functions.git
+cd boxlang-google-functions
+
+# Download BoxLang dependencies
+./gradlew downloadBoxLang
+
+# Build the runtime
+./gradlew build shadowJar
+
+# Create deployment packages
+./gradlew buildMainZip buildTestZip
+
+# Run tests
 ./gradlew test
 ```
 
-Full build:
+### Running Locally
+
+Start the local GCF Function Invoker server (defaults to port 9099):
 
 ```bash
-./gradlew clean build
+./gradlew runFunction                    # port 9099 (default)
+./gradlew runFunction -Pport=9090        # custom port
+./gradlew runFunction -Pdebug=true       # enable BoxLang verbose logging
+./gradlew runFunction -PfunctionRoot=... # custom .bx root directory
 ```
 
-Format code:
+Then run the smoke tests in another terminal:
 
 ```bash
-./gradlew spotlessApply
+./workbench/simple-test.sh              # tests against port 9099
+./workbench/simple-test.sh 9090         # custom port
 ```
 
----
-
-## Local Development
-
-The runtime can be executed locally using the Google Cloud Function Invoker.
-
-Start the local server:
+Or test manually with curl:
 
 ```bash
+curl http://localhost:9099/
+curl http://localhost:9099/customers
+curl http://localhost:9099/products
+```
+
+## 🧩 Core Components
+
+### FunctionRunner.java
+
+The main entry point implementing GCF's `HttpFunction`:
+
+- **Static Initialization** - BoxLang runtime loads once per container instance
+- **Class Caching** - Compiled BoxLang classes cached via `ConcurrentHashMap` (disabled in debug mode for live reloading)
+- **URI Routing** - Resolves incoming paths to `.bx` handler files automatically
+- **Application Lifecycle** - Integrates with BoxLang's `Application.bx` lifecycle
+
+### Environment Variables
+
+Runtime behavior is controlled via environment variables:
+
+| Variable | Description | Default |
+|---|---|---|
+| `BOXLANG_GCP_ROOT` | Root directory for `.bx` handler files | `/workspace` |
+| `BOXLANG_GCP_CLASS` | Override the default `Lambda.bx` path | *(unset)* |
+| `BOXLANG_GCP_DEBUGMODE` | Enable verbose logging and disable class caching | `false` |
+| `BOXLANG_GCP_CONFIG` | Path to a custom `boxlang.json` config | `boxlang.json` in root |
+| `K_SERVICE` | Function name (set automatically by GCF) | *(GCF-managed)* |
+| `K_REVISION` | Function revision (set automatically by GCF) | *(GCF-managed)* |
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID | *(GCF-managed)* |
+
+### Build System (Gradle)
+
+Key build tasks:
+
+- `build` - Builds, tests, and packages
+- `shadowJar` - Creates fat JAR with all dependencies
+- `buildMainZip` - Packages deployable GCF runtime + all `.bx` route classes
+- `buildTestZip` - Creates test package for validation
+- `runFunction` - Starts local GCF dev server
+- `downloadBoxLang` - Downloads BoxLang JARs for local development
+- `spotlessApply` - Code formatting and linting
+
+**Note:** The build system automatically includes all `.bx` files from `src/main/resources/` in the deployment package to support URI routing.
+
+## 🔬 Testing Infrastructure
+
+### Sample Requests
+
+The `workbench/sampleRequests/` directory contains test payloads for manual testing:
+
+- `customers.json` - Customer resource test
+- `products.json` - Product resource test
+- `health.json` - Health check test
+
+### Unit Tests
+
+Tests are located in `src/test/java/ortus/boxlang/runtime/gcp/`:
+
+- **`FunctionRunnerTest`** - Core runtime functionality and integration tests
+- **`HandlerCacheTest`** - Class caching and warm invocation validation
+- **`RequestMapperTest`** - HTTP request → event struct mapping
+- **`ResponseMapperTest`** - Response struct → HTTP response serialization
+- **`RouteResolutionTest`** - URI-to-handler routing logic
+
+### Smoke Testing
+
+```bash
+# Start the dev server
 ./gradlew runFunction
-```
 
-Expected output:
-
-```
-BoxLang GCF Function Invoker
-Listening on http://localhost:8080
-```
-
----
-
-## Local Testing
-
-Run the included smoke test script:
-
-```bash
+# In another terminal, run the smoke test suite
 ./workbench/simple-test.sh
 ```
 
-This script sends requests to:
+## ⚡ Performance Optimizations
 
-- `/`
-- `/products`
-- `/customers`
+### Class Compilation Caching
 
-and prints the JSON responses.
+The runtime caches compiled handler classes between invocations to minimize cold start overhead:
 
----
+```java
+private static final ConcurrentHashMap<String, IClassRunnable> classCache = new ConcurrentHashMap<>();
+```
 
-## Deploying to Google Cloud Functions
+In **debug mode** (`BOXLANG_GCP_DEBUGMODE=true`), caching is intentionally bypassed so that changes to `.bx` files are picked up immediately without restarting the server.
 
-Authenticate with Google Cloud:
+### Best Practices for Contributors
+
+- **Minimize Cold Start Impact** - Keep static initialization lightweight
+- **Cache Aggressively** - Store expensive computations in static variables
+- **Early Validation** - Fail fast on invalid inputs to reduce execution time
+- **Connection Reuse** - Store DB connections and HTTP clients as class variables
+
+## 🏗️ Build & Deployment
+
+### Creating Runtime Distributions
 
 ```bash
+# Build all artifacts
+./gradlew clean build shadowJar buildMainZip buildTestZip
+
+# Artifacts created in build/distributions/:
+# - boxlang-google-functions-{version}.jar  (fat JAR)
+# - boxlang-google-functions-{version}.zip  (deployable package)
+# - boxlang-google-functions-test-{version}.zip (test package)
+```
+
+### Deploying to Google Cloud Functions
+
+```bash
+# Authenticate
 gcloud auth login
-```
-
-Set your project:
-
-```bash
 gcloud config set project <YOUR_PROJECT_ID>
-```
 
-Deploy the function:
-
-```bash
+# Deploy
 gcloud functions deploy boxlang-gcf \
   --gen2 \
   --runtime=java21 \
   --region=us-central1 \
-  --source=. \
   --entry-point=ortus.boxlang.runtime.gcp.FunctionRunner \
   --trigger-http \
   --allow-unauthenticated \
-  --set-env-vars=BOXLANG_GCP_ROOT=/workspace/src/main/resources
+  --source=build/distributions/boxlang-google-functions-{version}.zip
 ```
 
-After deployment completes, Google Cloud will return the function URL.
+## 🧑‍💻 Usage
 
----
+To use it, create a Google Cloud Function using the `java21` runtime. Set the entry point to `ortus.boxlang.runtime.gcp.FunctionRunner`. By convention the runtime will execute a `Lambda.bx` file located at the root of the deployed package (`/workspace/Lambda.bx`) via the `run()` method:
 
-## Environment Variables
+```boxlang
+// Lambda.bx
+class {
 
-| Variable | Description |
-|---|---|
-| `BOXLANG_GCP_ROOT` | Directory where `.bx` handler files are located |
-| `BOXLANG_GCP_DEBUGMODE` | Enables debug logging |
-
-For deployments using the repository layout:
-
-```
-BOXLANG_GCP_ROOT=/workspace/src/main/resources
-```
-
----
-
-## Example Endpoints
-
-After deployment the following endpoints were validated:
-
-- `GET /`
-- `GET /products`
-- `GET /customers`
-- `GET /products/42`
-
-Example request:
-
-```bash
-curl https://<FUNCTION_URL>/products
-```
-
-Example response:
-
-```json
-{
-  "message": "Fetching all products",
-  "data": [
-    {
-      "id": 1,
-      "name": "Widget A",
-      "price": 19.99
+    function run( event, context, response ) {
+        // Your code here
     }
-  ]
+
 }
 ```
 
----
+- The `event` parameter is the HTTP request data mapped to a BoxLang `Struct` (method, path, headers, body, queryString, etc.).
+- The `context` parameter is GCF runtime metadata: `functionName`, `functionVersion`, `projectId`, `requestId`.
+- The `response` parameter is a mutable `Struct` you populate to control the HTTP response.
 
-## Current Validation Status
+### Response Struct
 
-The runtime has been validated with:
+The `response` struct supports the following keys:
 
-- Local execution using the GCF Java Function Invoker (`./gradlew runFunction`)
-- Local smoke tests (`./workbench/simple-test.sh`)
-- Deployment to Google Cloud Functions Gen2
+| Key | Description |
+|---|---|
+| `statusCode` | HTTP status code (default: `200`) |
+| `headers` | A `Struct` of response headers |
+| `body` | Response body — any type; serialized to JSON automatically |
+| `cookies` | An `Array` of cookie strings |
 
-Verified live endpoints:
+If you return a value directly from `run()`, it is placed in `response.body` automatically.
 
-- `/`
-- `/products`
-- `/customers`
-- `/products/42`
+### Example Function
 
-All endpoints returned successful HTTP responses and expected JSON payloads.
+```java
+// Lambda.bx
+class {
 
----
+    function run( event, context, response ) {
+        response.statusCode              = 200;
+        response.headers["Content-Type"] = "application/json";
+        response.body = serializeJSON( {
+            "message"      : "Hello from BoxLang on Google Cloud!",
+            "method"       : event.method,
+            "path"         : event.path,
+            "functionName" : context.functionName,
+            "requestId"    : context.requestId
+        } );
+    }
 
-## Notes / Follow-Up Areas
+}
+```
 
-This repository represents an initial runtime adapter implementation and may evolve after engineering review.
+Or using the shorthand return form:
 
-Potential follow-up areas include:
+```java
+// Lambda.bx
+class {
 
-- Additional routing edge cases
-- Improved event compatibility
-- Performance tuning
-- Additional automated tests
-- Parity improvements with the AWS Lambda runtime
+    function run( event, context, response ) {
+        return { "message": "Hello from BoxLang!" };
+    }
 
----
+}
+```
+
+### Custom Handler Class
+
+If you don't want to use the `Lambda.bx` convention, set the `BOXLANG_GCP_CLASS` environment variable to the full path of your BoxLang class file.
+
+### Debug Mode
+
+Set `BOXLANG_GCP_DEBUGMODE=true` to enable verbose logging and disable class caching (so `.bx` file changes are reflected immediately without a restart).
+
+## 📚 Additional Resources
+
+### BoxLang Documentation
+
+- **Main Documentation** - [boxlang.ortusbooks.com](https://boxlang.ortusbooks.com)
+- **Google Cloud Functions Guide** - [BoxLang GCF Documentation](https://boxlang.ortusbooks.com/getting-started/running-boxlang/google-cloud-functions)
+- **IDE Tooling** - [Development Tools](https://boxlang.ortusbooks.com/getting-started/ide-tooling)
+
+### Related Projects
+
+- **BoxLang Core** - [boxlang](https://github.com/ortus-boxlang/boxlang)
+- **Web Support** - [boxlang-web-support](https://github.com/ortus-boxlang/boxlang-web-support)
+- **AWS Lambda Runtime** - [boxlang-aws-lambda](https://github.com/ortus-boxlang/boxlang-aws-lambda)
 
 ## License
 
-Apache License 2.0
+Apache License, Version 2.0.
+
+## Open-Source & Professional Support
+
+This project is a professional open source project and is available as FREE and open source to use.  Ortus Solutions, Corp provides commercial support, training and commercial subscriptions which include the following:
+
+- Professional Support and Priority Queuing
+- Remote Assistance and Troubleshooting
+- New Feature Requests and Custom Development
+- Custom SLAs
+- Application Modernization and Migration Services
+- Performance Audits
+- Enterprise Modules and Integrations
+- Much More
+
+https://www.boxlang.io/plans
+
+<p>&nbsp;</p>
+
+<blockquote>
+"We ❤️ Open Source and BoxLang" - Luis Majano
+</blockquote>
+
+## ⭐ Star Us
+
+Please star us if this runtime helps you build amazing serverless applications with BoxLang!
+
+[![GitHub Stars](https://img.shields.io/github/stars/ortus-boxlang/boxlang-google-functions?style=social)](
+
+## Ortus Sponsors
+
+BoxLang is a professional open-source project and it is completely funded by the [community](https://patreon.com/ortussolutions) and [Ortus Solutions, Corp](https://www.ortussolutions.com). Ortus Patreons get many benefits like a cfcasts account, a FORGEBOX Pro account and so much more. If you are interested in becoming a sponsor, please visit our patronage page: [https://patreon.com/ortussolutions](https://patreon.com/ortussolutions)
+
+### THE DAILY BREAD
+
+> "I am the way, and the truth, and the life; no one comes to the Father, but by me (JESUS)" Jn 14:1-12

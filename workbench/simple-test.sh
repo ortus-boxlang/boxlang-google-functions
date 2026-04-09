@@ -4,13 +4,13 @@
 #
 # Start the function server first (in a separate terminal):
 #
-#   ./gradlew runFunction                    # port 8080 (default)
+#   ./gradlew runFunction                    # port 9099 (default)
 #   ./gradlew runFunction -Pport=9090        # custom port
 #   ./gradlew runFunction -Pdebug=true       # enable BoxLang debug logging
 #
 # Then, once the server is up, run this script:
 #
-#   ./workbench/simple-test.sh              # tests against port 8080
+#   ./workbench/simple-test.sh              # tests against port 9099
 #   ./workbench/simple-test.sh 9090         # custom port
 #
 # The script will wait up to 60 seconds for the server to become ready
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-PORT="${1:-8080}"
+PORT="${1:-9099}"
 BASE="http://localhost:${PORT}"
 FAILURES=0
 
