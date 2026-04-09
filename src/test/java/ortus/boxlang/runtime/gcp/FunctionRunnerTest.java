@@ -228,11 +228,11 @@ public class FunctionRunnerTest {
 	@Test
 	@DisplayName( "Handles concurrent invocations without data corruption" )
 	public void testConcurrentInvocations() throws Exception {
-		FunctionRunner		runner		= new FunctionRunner( TEST_LAMBDA, true );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, true );
 
 		// Launch 5 threads simultaneously
-		Thread[]			threads		= new Thread[ 5 ];
-		int[]				statusCodes	= new int[ 5 ];
+		Thread[]		threads		= new Thread[ 5 ];
+		int[]			statusCodes	= new int[ 5 ];
 
 		for ( int i = 0; i < threads.length; i++ ) {
 			final int idx = i;
