@@ -54,14 +54,14 @@ configurations {
 dependencies {
 	// LOCAL DEVELOPMENT ONLY
 	// CHOOSE THE RIGHT LOCATION FOR YOUR LOCAL DEPENDENCIES
-  if ( file( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' ).exists() ) {
-		implementation files( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' )
-		implementation files( '../boxlang-web-support/build/distributions/boxlang-web-support-' + boxlangVersion + '.jar' )
-	} else {
+//   if ( file( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' ).exists() ) {
+// 		implementation files( '../boxlang/build/libs/boxlang-' + boxlangVersion + '.jar' )
+// 		implementation files( '../boxlang-web-support/build/distributions/boxlang-web-support-' + boxlangVersion + '.jar' )
+// 	} else {
 		// Downloaded Dependencies
 		implementation files( 'src/test/resources/libs/boxlang-web-support-' + boxlangVersion + '.jar' )
 		implementation files( 'src/test/resources/libs/boxlang-' + boxlangVersion + '.jar' )
-	}
+	// }
 
     // Google Cloud Functions Framework API (provided by GCF runtime — compileOnly keeps it out of the fat JAR)
     compileOnly 'com.google.cloud.functions:functions-framework-api:1.1.0'

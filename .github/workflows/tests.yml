@@ -1,0 +1,107 @@
+name: Test Suites
+
+# We are a reusable Workflow only
+on:
+  workflow_call:
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: false
+
+env:
+  MODULE_ID: ${{ github.event.repository.name }}
+
+jobs:
+  tests:
+    name: Tests ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      DB_USER: root
+      DB_PASSWORD: root
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ "ubuntu-latest" ]
+        jdkVersion: [ "21" ]
+        experimental: [false]
+        #include:
+          #- jdkVersion: "21"
+          #  os: "windows-latest"
+          #  experimental: true
+          # Disabled for now until we can figure out the gradle matrix
+          #- jdkVersion: "21"
+          #  os: "ubuntu-latest"
+          #  experimental: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: ${{ matrix.jdkVersion }}
+
+      # - name: Setup Database and Fixtures
+      #   run: |
+      #     sudo systemctl start mysql.service
+      #     mysql -u${{ env.DB_USER }} -p${{ env.DB_PASSWORD }} -e 'CREATE DATABASE mementifier;'
+      #     mysql -u${{ env.DB_USER }} -p${{ env.DB_PASSWORD }} < test-harness/tests/resources/coolblog.sql
+
+      #- name: Setup CommandBox CLI
+      #  uses: Ortus-Solutions/setup-commandbox@v2.0.1
+
+      # Not Needed in this module
+      #- name: Setup Environment For Testing Process
+      #  run: |
+      #    # Setup .env
+      #    touch .env
+      #    # ENV
+      #    printf "DB_HOST=localhost\n" >> .env
+      #    printf "DB_DATABASE=mydatabase\n" >> .env
+      #    printf "DB_DRIVER=MySQL\n" >> .env
+      #    printf "DB_USER=${{ env.DB_USER }}\n" >> .env
+      #    printf "DB_PASSWORD=${{ env.DB_PASSWORD }}\n" >> .env
+      #    printf "DB_CLASS=com.mysql.cj.jdbc.Driver\n" >> .env
+      #    printf "DB_BUNDLEVERSION=8.0.19\n" >> .env
+      #    printf "DB_BUNDLENAME=com.mysql.cj\n" >> .env
+
+      - name: Test Module
+        run: |
+          ./gradlew downloadBoxLang
+          ./gradlew test --stacktrace --console=plain
+
+      - name: Publish Test Reports
+        uses: mikepenz/action-junit-report@v6.4.0
+        if: always()
+        with:
+          report_paths: |
+            **/build/test-results/test/*.xml
+            **/surefire-reports/*.xml
+            **/failsafe-reports/*.xml
+          check_name: "JUnit Report ${{ matrix.os }}-${{ matrix.jdkVersion }}"
+          include_passed: false
+          fail_on_failure: true
+          summary: "Test Results for ${{ matrix.os }} on JDK ${{ matrix.jdkVersion }}"
+          detailed_summary: true
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tests-${{ matrix.os }}-${{ matrix.jdkVersion }}
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+
+      - name: Inform Slack
+        if: ${{ failure() && github.ref == 'refs/heads/development' }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_CHANNEL: boxlang
+          SLACK_COLOR: ${{ job.status }} # or a specific color like 'green' or '#ff00ff'
+          SLACK_ICON_EMOJI: ":bell:"
+          SLACK_MESSAGE: "${{ github.repository }} Tests FAILED!  You broke the build! :("
+          SLACK_TITLE: "${{ github.repository }} Build Failure"
+          SLACK_USERNAME: CI
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
