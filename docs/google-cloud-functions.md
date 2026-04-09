@@ -63,7 +63,15 @@ The runtime is designed so that handler code written for this runtime is portabl
 
 ## Project Setup
 
-Clone the repository and download the BoxLang JARs needed for local development:
+The easiest way to get started is with the official starter template:
+
+```bash
+git clone https://github.com/ortus-boxlang/boxlang-starter-google-functions.git
+cd boxlang-starter-google-functions
+./gradlew downloadBoxLang
+```
+
+Alternatively, clone the runtime repository directly if you need to work on the runtime itself:
 
 ```bash
 git clone https://github.com/ortus-boxlang/boxlang-google-functions.git
@@ -90,7 +98,7 @@ The project includes a Gradle task that starts a local HTTP server using the off
 Optional flags:
 
 ```bash
-./gradlew runFunction -Pport=9090          # custom port (default: 8080)
+./gradlew runFunction -Pport=9090          # custom port (default: 9099)
 ./gradlew runFunction -Pdebug=true         # enable BoxLang verbose logging
 ./gradlew runFunction -PfunctionRoot=/path # custom .bx handler directory
 ```
@@ -100,7 +108,7 @@ Expected output:
 ```
 ================================================================
  BoxLang GCF Function Invoker
- Listening on  : http://localhost:8080
+ Listening on  : http://localhost:9099
  Function root : .../src/test/resources
  Debug mode    : false
  Press Ctrl+C to stop.
@@ -115,7 +123,7 @@ The function root defaults to `src/test/resources` during local development so y
 
 Handlers are BoxLang classes (`.bx` files) that expose a `run()` method. The runtime locates the handler file on disk, compiles it once, and caches the compiled class for all subsequent warm invocations.
 
-```boxlang
+```java
 class {
 
     function run( event, context, response ) {
@@ -144,7 +152,7 @@ Returning a struct or array from `run()` is the simplest way to produce a JSON r
 
 The event struct mirrors the AWS API Gateway v2.0 HTTP event shape so that handler code can run on both platforms without modification:
 
-```boxlang
+```java
 {
     method                : "GET",
     path                  : "/products",
@@ -178,7 +186,7 @@ The context struct provides metadata about the running function instance. It is 
 
 The default response struct provided to your handler is:
 
-```boxlang
+```java
 {
     statusCode : 200,
     headers    : { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
@@ -224,7 +232,7 @@ src/main/resources/
 
 Each file is a standard BoxLang class exposing a `run()` method:
 
-```boxlang
+```java
 // Products.bx
 class {
 
@@ -258,7 +266,7 @@ This will call `findById( event, context, response )` in `Products.bx` instead o
 |---|---|
 | `BOXLANG_GCP_ROOT` | Directory where `.bx` handler files are located. Defaults to `/workspace` on GCF Gen2. |
 | `BOXLANG_GCP_CLASS` | Absolute path override for the default handler. Bypasses `Lambda.bx` convention. |
-| `BOXLANG_GCP_DEBUGMODE` | Set to `true` to enable verbose diagnostic logging. |
+| `BOXLANG_GCP_DEBUGMODE` | Set to `true` to enable verbose diagnostic logging and disable class caching (live reloading). |
 | `BOXLANG_GCP_CONFIG` | Absolute path to a custom `boxlang.json` runtime configuration file. |
 | `K_SERVICE` | Function name — set automatically by GCF Gen2. |
 | `K_REVISION` | Function revision — set automatically by GCF Gen2. |
@@ -420,6 +428,8 @@ FunctionRunner  ← implements HttpFunction
 ```
 
 **Cold start:** The BoxLang runtime is initialized once in a static block when the container first starts. Compiled `.bx` classes are cached in-memory and reused across all warm invocations without recompilation.
+
+**Debug mode:** When `BOXLANG_GCP_DEBUGMODE=true`, class caching is disabled. Every invocation recompiles the `.bx` handler from disk, so changes to handler files are picked up immediately without restarting the server. Never enable debug mode in production.
 
 **Routing:** The first URI path segment is converted to PascalCase and matched against `.bx` files in `BOXLANG_GCP_ROOT`. If no match is found, `Lambda.bx` is used as the fallback. The routing logic lives entirely inside `FunctionRunner` — no external routing configuration is required.
 
