@@ -19,7 +19,7 @@ plugins {
 	// Maven Publisher
 	id 'maven-publish'
 	id 'signing'
-	id 'com.gradleup.nmcp.aggregation' version "1.4.4"
+	id 'com.gradleup.nmcp.aggregation' version "1.5.0"
 }
 
 /**
