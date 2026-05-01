@@ -67,7 +67,7 @@ dependencies {
     compileOnly 'com.google.cloud.functions:functions-framework-api:2.0.0'
 
     // GCF Java Function Invoker — local dev server only, not on any compile/test/runtime path
-    invoker 'com.google.cloud.functions.invoker:java-function-invoker:2.0.0'
+    invoker 'com.google.cloud.functions.invoker:java-function-invoker:2.0.1'
 
     // SLF4J no-op binding to silence BoxLang's SLF4J dependency
     implementation 'org.slf4j:slf4j-nop:2.0.17'
