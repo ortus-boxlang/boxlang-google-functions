@@ -53,7 +53,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup CommandBox
         uses: Ortus-Solutions/setup-commandbox@v2.0.1
@@ -216,13 +216,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout Development Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         if: env.LTS == 'false'
         with:
           ref: development
 
       - name: Checkout LTS Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         if: env.LTS == 'true'
 
       - name: Download build artifacts
