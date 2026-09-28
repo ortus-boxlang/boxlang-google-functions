@@ -38,9 +38,5 @@ jobs:
           distribution: "temurin"
           java-version: 21
 
-      - uses: Ortus-Solutions/commandbox-action@v1.0.3
-        with:
-          cmd: run-script format:check
-
       - name: Verify Code Formatting
         run: ./gradlew spotlessCheck
