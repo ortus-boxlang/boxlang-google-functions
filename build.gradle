@@ -395,11 +395,13 @@ task buildMainZip( type: Zip ) {
 
 		file( "build/evergreen" ).mkdirs()
 		if( branch == 'development' ){
+			Files.copy( file( "build/resources/main/META-INF/boxlang-google-functions/version.properties" ).toPath(), file( "build/evergreen/version-snapshot.properties" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar" ).toPath(), file( "build/evergreen/boxlang-google-functions-snapshot.jar" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			// Checksums
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar.sha-256" ).toPath(), file( "build/evergreen/boxlang-google-functions-snapshot.jar.sha-256" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar.md5" ).toPath(), file( "build/evergreen/boxlang-google-functions-snapshot.jar.md5" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 		} else {
+			Files.copy( file( "build/resources/main/META-INF/boxlang-google-functions/version.properties" ).toPath(), file( "build/evergreen/version-latest.properties" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar" ).toPath(), file( "build/evergreen/boxlang-google-functions-latest.jar" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar.sha-256" ).toPath(), file( "build/evergreen/boxlang-google-functions-latest.jar.sha-256" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
 			Files.copy( file( "build/distributions/boxlang-google-functions-${version}.jar.md5" ).toPath(), file( "build/evergreen/boxlang-google-functions-latest.jar.md5" ).toPath(), StandardCopyOption.REPLACE_EXISTING )
