@@ -12,6 +12,11 @@ on:
       - "releases/v*"
       - development
 
+# Cancel running builds if another push to the PR/branch is made while this build is running
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     permissions:
