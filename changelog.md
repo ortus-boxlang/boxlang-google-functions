@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- URI routing and the `x-bx-function` header could reach any root-level `.bx` file and any public method on it, including `Application.bx`'s lifecycle callbacks, without authentication. Routing is now restricted to a `handlers/` directory convention (or a build-time `manifest.json` allowlist); `Application.bx` and the default handler class are never eligible routing targets, even under the legacy backward-compatibility fallback for existing deployments.
+
 ## [1.17.0] - 2026-08-28
 
 ## [1.16.0] - 2026-07-30

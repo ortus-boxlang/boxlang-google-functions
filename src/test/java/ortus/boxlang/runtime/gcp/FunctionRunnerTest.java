@@ -286,4 +286,73 @@ public class FunctionRunnerTest {
 
 		assertThat( runner.getRuntime() ).isNotNull();
 	}
+
+	// =========================================================================
+	// Manifest / handlers routing
+	// =========================================================================
+
+	@Test
+	@DisplayName( "manifest.json is authoritative: routes what it lists, ignores what it doesn't" )
+	public void testManifestRoutingIsAuthoritative() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "Manifest-routed: Products handler" );
+
+		// Decoy.bx exists on disk (in handlers/) but is NOT listed in manifest.json:
+		// it must never be reachable, proving the manifest is the allowlist, not
+		// merely a hint that the handlers/ directory happens to exist.
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "decoy" );
+		assertThat( runner.resolveRoute( "/decoy" ) ).isNull();
+	}
+
+	@Test
+	@DisplayName( "handlers/ directory boot-scan supports nested, case-insensitive routes" )
+	public void testHandlersDirectoryNestedRouting() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "handlersRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// handlers/Api/Test.bx (mixed-case directory) registers as "api/test"
+		assertThat( runner.getHandlerRoutes() ).containsKey( "api/test" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/api/test" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "Nested handler: api/test" );
+	}
+
+	@Test
+	@DisplayName( "Application.bx and the default handler class are never routable targets" )
+	public void testReservedFilesNeverRouted() {
+		Path			testPath	= Path.of( "src", "test", "resources", "reservedRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// Neither Application.bx nor Lambda.bx should ever appear in the routing table,
+		// even under the legacy root-scan fallback (no handlers/ or manifest.json here) -
+		// this is the exact scenario the reported vulnerability exploited:
+		// GET /application + x-bx-function: onApplicationStart
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "application" );
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "lambda" );
+		assertThat( runner.resolveRoute( "/application" ) ).isNull();
+	}
+
+	@Test
+	@DisplayName( "A corrupt manifest.json falls back to the handlers/ directory scan instead of failing startup" )
+	public void testCorruptManifestFallsBackToDirectoryScan() {
+		Path			testPath	= Path.of( "src", "test", "resources", "corruptManifest" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// manifest.json is invalid JSON; the handlers/Foo.bx directory scan should still
+		// have registered "foo" as a fallback, rather than the constructor throwing
+		assertThat( runner.getHandlerRoutes() ).containsKey( "foo" );
+	}
 }

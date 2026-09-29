@@ -1,0 +1,9 @@
+{
+	"manifestVersion": 1,
+	"generatedAt": "2026-09-29T12:00:00Z",
+	"defaultHandler": { "file": "Lambda.bx", "method": "run" },
+	"handlers": {
+		"products": { "file": "handlers/Products.bx" }
+	},
+	"reserved": ["Application.bx", "Lambda.bx"]
+}

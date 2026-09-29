@@ -1,0 +1,6 @@
+class{
+
+	function run( event, context, response ){
+		return { "message": "Should never be reachable - not in manifest.json" };
+	}
+}
