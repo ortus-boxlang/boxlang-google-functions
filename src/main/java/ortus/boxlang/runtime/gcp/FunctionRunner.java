@@ -204,17 +204,17 @@ public class FunctionRunner implements HttpFunction {
 	/**
 	 * The absolute path to the default BoxLang handler file ({@code Lambda.bx}).
 	 */
-	protected Path		defaultFunctionPath;
+	protected Path						defaultFunctionPath;
 
 	/**
 	 * The root directory that contains the deployed {@code .bx} class files.
 	 */
-	protected String	functionRoot;
+	protected String					functionRoot;
 
 	/**
 	 * Whether to emit verbose diagnostic output.
 	 */
-	protected boolean	debugMode;
+	protected boolean					debugMode;
 
 	/**
 	 * URI-routing table: route key (lowercase, "/"-joined path segments, e.g. "products"
@@ -224,7 +224,7 @@ public class FunctionRunner implements HttpFunction {
 	 * last resort for backward compatibility. Never consulted or rebuilt from the
 	 * filesystem on a per-request basis.
 	 */
-	protected final Map<String, Path> handlerRoutes;
+	protected final Map<String, Path>	handlerRoutes;
 
 	// =========================================================================
 	// Constructors
@@ -525,7 +525,8 @@ public class FunctionRunner implements HttpFunction {
 				if ( i > 0 ) {
 					routeKey.append( '/' );
 				}
-				routeKey.append( segments[ i ].toLowerCase() );
+				// Strip hyphens: hyphenated URI segments map to PascalCase filenames, e.g. "user-profiles" -> "UserProfiles.bx"
+				routeKey.append( segments[ i ].replace( "-", "" ).toLowerCase() );
 			}
 			Path match = this.handlerRoutes.get( routeKey.toString() );
 			if ( match != null ) {
@@ -611,12 +612,12 @@ public class FunctionRunner implements HttpFunction {
 	private Map<String, Path> parseManifest( Path manifestPath ) throws IOException {
 		String	content	= new String( Files.readAllBytes( manifestPath ), StandardCharsets.UTF_8 );
 		Object	parsed	= JSONUtil.fromJSON( content, true );
-		if ( !( parsed instanceof IStruct manifest ) ) {
+		if ( ! ( parsed instanceof IStruct manifest ) ) {
 			throw new IllegalArgumentException( MANIFEST_FILE + " root is not a JSON object" );
 		}
 
 		Object handlersObj = manifest.get( Key.of( "handlers" ) );
-		if ( !( handlersObj instanceof IStruct handlersStruct ) ) {
+		if ( ! ( handlersObj instanceof IStruct handlersStruct ) ) {
 			throw new IllegalArgumentException( MANIFEST_FILE + " is missing a valid 'handlers' object" );
 		}
 
@@ -654,8 +655,8 @@ public class FunctionRunner implements HttpFunction {
 				String subPrefix = prefix.isEmpty() ? entry.getName().toLowerCase() : prefix + "/" + entry.getName().toLowerCase();
 				routes.putAll( scanHandlersDirectory( entry.toPath(), subPrefix ) );
 			} else if ( entry.getName().toLowerCase().endsWith( ".bx" ) ) {
-				String fileKey	= entry.getName().substring( 0, entry.getName().length() - 3 ).toLowerCase();
-				String routeKey	= prefix.isEmpty() ? fileKey : prefix + "/" + fileKey;
+				String	fileKey		= entry.getName().substring( 0, entry.getName().length() - 3 ).toLowerCase();
+				String	routeKey	= prefix.isEmpty() ? fileKey : prefix + "/" + fileKey;
 				routes.put( routeKey, entry.toPath().toAbsolutePath() );
 			}
 		}
@@ -672,8 +673,8 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The route key to Path map
 	 */
 	private Map<String, Path> scanLegacyRoot() {
-		Map<String, Path>	routes		= new LinkedHashMap<>();
-		File[]				entries		= Path.of( this.functionRoot ).toFile().listFiles();
+		Map<String, Path>	routes	= new LinkedHashMap<>();
+		File[]				entries	= Path.of( this.functionRoot ).toFile().listFiles();
 		if ( entries == null ) {
 			return routes;
 		}
