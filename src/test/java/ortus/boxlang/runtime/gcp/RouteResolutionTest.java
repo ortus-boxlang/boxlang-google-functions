@@ -23,31 +23,35 @@ import org.junit.jupiter.api.Test;
  */
 public class RouteResolutionTest {
 
-	/** Root directory containing the test .bx class files */
-	private static final String TEST_ROOT = Path.of( "src", "test", "resources" ).toAbsolutePath().toString();
+	/** Default handler file for the legacy flat-root fixture (src/test/resources) */
+	private static final Path TEST_LAMBDA = Path.of( "src", "test", "resources", "Lambda.bx" );
 
 	@Test
 	@DisplayName( "Returns null for root path '/'" )
 	public void testRootPathReturnsNull() {
-		assertThat( FunctionRunner.resolveRoute( "/", TEST_ROOT, false ) ).isNull();
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, false );
+		assertThat( runner.resolveRoute( "/" ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Returns null for null URI" )
 	public void testNullUriReturnsNull() {
-		assertThat( FunctionRunner.resolveRoute( null, TEST_ROOT, false ) ).isNull();
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, false );
+		assertThat( runner.resolveRoute( null ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Returns null for empty URI" )
 	public void testEmptyUriReturnsNull() {
-		assertThat( FunctionRunner.resolveRoute( "", TEST_ROOT, false ) ).isNull();
+		FunctionRunner runner = new FunctionRunner( TEST_LAMBDA, false );
+		assertThat( runner.resolveRoute( "" ) ).isNull();
 	}
 
 	@Test
 	@DisplayName( "Resolves /products to Products.bx" )
 	public void testResolvesProductsPath() {
-		Path resolved = FunctionRunner.resolveRoute( "/products", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/products" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -56,7 +60,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Resolves /customers to Customers.bx" )
 	public void testResolvesCustomersPath() {
-		Path resolved = FunctionRunner.resolveRoute( "/customers", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/customers" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Customers.bx" );
@@ -65,7 +70,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Resolves only the first segment — /products/123 → Products.bx" )
 	public void testNestedPathUsesFirstSegment() {
-		Path resolved = FunctionRunner.resolveRoute( "/products/123", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/products/123" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -74,7 +80,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Resolves /products/categories/electronics → Products.bx" )
 	public void testDeeplyNestedPathUsesFirstSegment() {
-		Path resolved = FunctionRunner.resolveRoute( "/products/categories/electronics", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/products/categories/electronics" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "Products.bx" );
@@ -83,7 +90,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Returns null for a URI whose class does not exist on disk" )
 	public void testNonExistentClassReturnsNull() {
-		Path resolved = FunctionRunner.resolveRoute( "/nonexistent-resource", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/nonexistent-resource" );
 
 		assertThat( resolved ).isNull();
 	}
@@ -91,7 +99,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Converts hyphenated segment to PascalCase — /user-profiles → UserProfiles.bx" )
 	public void testHyphenatedPathConvertsToPascalCase() {
-		Path resolved = FunctionRunner.resolveRoute( "/user-profiles", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/user-profiles" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.getFileName().toString() ).isEqualTo( "UserProfiles.bx" );
@@ -100,7 +109,8 @@ public class RouteResolutionTest {
 	@Test
 	@DisplayName( "Resolved path is absolute" )
 	public void testResolvedPathIsAbsolute() {
-		Path resolved = FunctionRunner.resolveRoute( "/products", TEST_ROOT, false );
+		FunctionRunner	runner		= new FunctionRunner( TEST_LAMBDA, false );
+		Path			resolved	= runner.resolveRoute( "/products" );
 
 		assertThat( resolved ).isNotNull();
 		assertThat( resolved.isAbsolute() ).isTrue();

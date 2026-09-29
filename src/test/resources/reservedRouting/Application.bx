@@ -1,0 +1,6 @@
+class{
+
+	public boolean function onApplicationStart() {
+		return true;
+	}
+}
