@@ -346,14 +346,15 @@ public class FunctionRunnerTest {
 	}
 
 	@Test
-	@DisplayName( "A corrupt manifest.json falls back to the handlers/ directory scan instead of failing startup" )
-	public void testCorruptManifestFallsBackToDirectoryScan() {
+	@DisplayName( "A corrupt manifest.json restricts routing to the default handler only, instead of widening to a directory scan" )
+	public void testCorruptManifestRestrictsToDefaultHandlerOnly() {
 		Path			testPath	= Path.of( "src", "test", "resources", "corruptManifest" );
 		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
 
-		// manifest.json is invalid JSON; the handlers/Foo.bx directory scan should still
-		// have registered "foo" as a fallback, rather than the constructor throwing
-		assertThat( runner.getHandlerRoutes() ).containsKey( "foo" );
+		// manifest.json is invalid JSON, and a handlers/Foo.bx directory also exists - but a
+		// present-and-corrupt manifest.json is a build/deploy error, not license to widen
+		// routing by falling back to a directory scan. Only the default handler is reachable.
+		assertThat( runner.getHandlerRoutes() ).isEmpty();
 	}
 
 	// =========================================================================
@@ -485,5 +486,33 @@ public class FunctionRunnerTest {
 		);
 		assertThat( thrown.getMessage() ).contains( "reserved" );
 		assertThat( thrown.getMessage() ).contains( "Application.bx" );
+	}
+
+	@Test
+	@DisplayName( "manifest.json handlers[*].file cannot escape the function root via ../ path traversal" )
+	public void testManifestHandlerPathTraversalIsRejected() {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestPathTraversal", "app" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// The manifest declares "secret" -> "../outside/Secret.bx"; despite that file
+		// genuinely existing, it must never be registered as a route since it resolves
+		// outside the function root.
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "secret" );
+	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file cannot escape the function root via ../ path traversal" )
+	public void testManifestDefaultHandlerPathTraversalIsRejected() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandlerTraversal", "app" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// defaultHandler.file points outside the function root via ../ - the conventional
+		// Lambda.bx must remain in effect rather than the out-of-root Secret.bx
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/anything" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "conventional default lambda" );
 	}
 }

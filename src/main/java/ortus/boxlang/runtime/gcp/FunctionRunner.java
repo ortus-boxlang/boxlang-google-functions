@@ -655,10 +655,17 @@ public class FunctionRunner implements HttpFunction {
 				// over by falling back to a directory scan - rethrow to abort cold start.
 				throw e;
 			} catch ( Exception e ) {
+				// A present-but-corrupt manifest.json means this deployment explicitly opted
+				// into manifest-based routing and something went wrong producing it - that's a
+				// build/deploy error, not a signal to widen routing by falling back to a
+				// directory or legacy root scan. Restrict to the default handler only so the
+				// failure is safe rather than silently exposing more surface than intended.
 				System.err.println(
 				    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " found at " + manifestPath
-				        + " but could not be parsed (" + e.getMessage() + "); falling back to a directory scan"
+				        + " but could not be parsed (" + e.getMessage() + "); restricting routing to the "
+				        + "default handler only. Fix and redeploy " + MANIFEST_FILE + " to restore handlers/ routing."
 				);
+				return new LinkedHashMap<>();
 			}
 		}
 
@@ -731,9 +738,16 @@ public class FunctionRunner implements HttpFunction {
 			Object entry = handlersStruct.get( routeKey );
 			if ( entry instanceof IStruct entryStruct && entryStruct.get( Key.of( "file" ) ) != null ) {
 				String	relativeFile	= entryStruct.get( Key.of( "file" ) ).toString();
-				Path	resolvedFile	= Path.of( this.functionRoot, relativeFile ).toAbsolutePath();
+				Path	resolvedFile	= Path.of( this.functionRoot, relativeFile ).toAbsolutePath().normalize();
 				String	leafName		= resolvedFile.getFileName().toString().toLowerCase();
 
+				if ( !isWithinFunctionRoot( resolvedFile ) ) {
+					System.out.println(
+					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
+					        + "' to " + relativeFile + ", which resolves outside the function root; ignoring this entry"
+					);
+					continue;
+				}
 				if ( reserved.contains( leafName ) ) {
 					System.out.println(
 					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
@@ -774,7 +788,14 @@ public class FunctionRunner implements HttpFunction {
 			return;
 		}
 
-		Path resolvedFile = Path.of( this.functionRoot, fileObj.toString() ).toAbsolutePath();
+		Path resolvedFile = Path.of( this.functionRoot, fileObj.toString() ).toAbsolutePath().normalize();
+		if ( !isWithinFunctionRoot( resolvedFile ) ) {
+			System.out.println(
+			    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " defaultHandler.file " + fileObj
+			        + " resolves outside the function root; keeping the conventional default handler"
+			);
+			return;
+		}
 		if ( !resolvedFile.toFile().isFile() ) {
 			System.out.println(
 			    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " defaultHandler.file " + fileObj
@@ -866,6 +887,21 @@ public class FunctionRunner implements HttpFunction {
 		reserved.add( RESERVED_APPLICATION_BX );
 		reserved.add( this.defaultHandlerPath.getFileName().toString().toLowerCase() );
 		return reserved;
+	}
+
+	/**
+	 * Confines manifest.json-declared paths ({@code handlers[*].file} and
+	 * {@code defaultHandler.file}) to the function root, so a relative path containing
+	 * {@code ../} segments can never escape it to route to (and thus source-disclose or
+	 * execute) an arbitrary file elsewhere on the filesystem.
+	 *
+	 * @param candidate An already-normalized, absolute path to check
+	 *
+	 * @return true if candidate is the function root itself or a descendant of it
+	 */
+	private boolean isWithinFunctionRoot( Path candidate ) {
+		Path root = Path.of( this.functionRoot ).toAbsolutePath().normalize();
+		return candidate.equals( root ) || candidate.startsWith( root );
 	}
 
 	/**

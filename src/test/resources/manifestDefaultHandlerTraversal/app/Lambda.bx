@@ -1,0 +1,6 @@
+class{
+
+	function run( event, context, response ){
+		return { "message": "conventional default lambda" }
+	}
+}
