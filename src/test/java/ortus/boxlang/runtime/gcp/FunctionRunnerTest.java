@@ -473,4 +473,17 @@ public class FunctionRunnerTest {
 		assertThat( res.getStatusCode() ).isEqualTo( 200 );
 		assertThat( res.getBody() ).contains( "manifest-declared default handler" );
 	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file pointing at Application.bx hard-aborts cold start" )
+	public void testManifestDefaultHandlerReservedHardAborts() {
+		Path									testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandlerReserved" );
+
+		FunctionRunner.ReservedHandlerException	thrown		= assertThrows(
+		    FunctionRunner.ReservedHandlerException.class,
+		    () -> new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true )
+		);
+		assertThat( thrown.getMessage() ).contains( "reserved" );
+		assertThat( thrown.getMessage() ).contains( "Application.bx" );
+	}
 }
