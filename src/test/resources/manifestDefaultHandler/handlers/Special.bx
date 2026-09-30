@@ -1,0 +1,6 @@
+class{
+
+	function handle( event, context, response ){
+		return { "message": "manifest-declared default handler" }
+	}
+}

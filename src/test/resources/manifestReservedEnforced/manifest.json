@@ -1,0 +1,13 @@
+{
+	"manifestVersion": 1,
+	"generatedAt": "2026-01-01T00:00:00Z",
+	"generator": "test-fixture",
+	"defaultHandler": { "file": "Lambda.bx", "method": "run" },
+	"handlers": {
+		"application": { "file": "Application.bx" },
+		"lambda": { "file": "Lambda.bx" },
+		"secret": { "file": "Secret.bx" },
+		"products": { "file": "handlers/Products.bx" }
+	},
+	"reserved": ["Application.bx", "Lambda.bx", "Secret.bx"]
+}
