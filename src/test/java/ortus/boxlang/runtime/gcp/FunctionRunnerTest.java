@@ -355,4 +355,42 @@ public class FunctionRunnerTest {
 		// have registered "foo" as a fallback, rather than the constructor throwing
 		assertThat( runner.getHandlerRoutes() ).containsKey( "foo" );
 	}
+
+	// =========================================================================
+	// Application.bx lifecycle
+	// =========================================================================
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart fires for the default Lambda.bx handler" )
+	public void testApplicationLifecycleFiresForDefaultHandler() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart also fires when URI routing dispatches to a handlers/ class" )
+	public void testApplicationLifecycleFiresForRoutedHandler() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// Sanity check: the request really is being routed to handlers/Products.bx, not
+		// silently falling back to the default Lambda.bx
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		// Before the fix, Application.bx was looked up relative to handlers/, where it
+		// doesn't exist, so onRequestStart never fired and this would be false.
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
 }

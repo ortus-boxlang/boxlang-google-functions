@@ -1,0 +1,7 @@
+class{
+
+	function onRequestStart( targetPage ) {
+		request.applicationBxFired = true
+		return true
+	}
+}
