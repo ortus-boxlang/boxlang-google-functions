@@ -1,0 +1,6 @@
+class{
+
+	function readRequest( event, context, response ){
+		return { "message": "transport internals should never be URI-routable" }
+	}
+}

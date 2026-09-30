@@ -1,0 +1,8 @@
+{
+	"manifestVersion": 1,
+	"generatedAt": "2026-01-01T00:00:00Z",
+	"generator": "test-fixture",
+	"defaultHandler": { "file": "handlers/Special.bx", "method": "handle" },
+	"handlers": {},
+	"reserved": ["Application.bx", "Lambda.bx"]
+}

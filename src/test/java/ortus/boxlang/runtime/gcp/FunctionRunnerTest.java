@@ -355,4 +355,122 @@ public class FunctionRunnerTest {
 		// have registered "foo" as a fallback, rather than the constructor throwing
 		assertThat( runner.getHandlerRoutes() ).containsKey( "foo" );
 	}
+
+	// =========================================================================
+	// Application.bx lifecycle
+	// =========================================================================
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart fires for the default Lambda.bx handler" )
+	public void testApplicationLifecycleFiresForDefaultHandler() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart also fires when URI routing dispatches to a handlers/ class" )
+	public void testApplicationLifecycleFiresForRoutedHandler() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// Sanity check: the request really is being routed to handlers/Products.bx, not
+		// silently falling back to the default Lambda.bx
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		// Before the fix, Application.bx was looked up relative to handlers/, where it
+		// doesn't exist, so onRequestStart never fired and this would be false.
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
+
+	// =========================================================================
+	// Opt-in legacy root scan
+	// =========================================================================
+
+	@Test
+	@DisplayName( "The legacy root-directory scan is on by default, matching prior releases" )
+	public void testRootScanEnabledByDefault() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "rootScanDisabled" );
+		// null = defer to BOXLANG_ENABLE_ROOT_SCAN, which defaults to true when unset
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true, null );
+
+		assertThat( runner.getHandlerRoutes() ).containsKey( "transport" );
+	}
+
+	@Test
+	@DisplayName( "BOXLANG_ENABLE_ROOT_SCAN=false restricts the no-manifest/no-handlers fallback to the default handler only" )
+	public void testRootScanCanBeDisabled() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "rootScanDisabled" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true, false );
+
+		// Transport.bx exists on disk at the root, but with root scanning disabled it must
+		// never become a routable target.
+		assertThat( runner.getHandlerRoutes() ).isEmpty();
+		assertThat( runner.resolveRoute( "/transport" ) ).isNull();
+		assertThat( runner.resolveRoute( "/TRANSPORT" ) ).isNull();
+
+		// With no route registered for /transport, this must fall back to the default
+		// handler (Lambda.bx), not reach Transport.bx.
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/transport" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "default lambda" );
+	}
+
+	// =========================================================================
+	// Manifest enforcement: reserved + defaultHandler
+	// =========================================================================
+
+	@Test
+	@DisplayName( "manifest.json cannot route to Application.bx, Lambda.bx, or its own declared reserved files" )
+	public void testManifestReservedListIsEnforced() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestReservedEnforced" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "application" );
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "lambda" );
+		// The manifest's own "reserved" array names Secret.bx, even though it's neither
+		// Application.bx nor the default handler
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "secret" );
+		assertThat( runner.resolveRoute( "/application" ) ).isNull();
+		assertThat( runner.resolveRoute( "/secret" ) ).isNull();
+
+		// A legitimate, non-reserved route from the same manifest still works
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file/method is respected instead of the Lambda.bx/run() convention" )
+	public void testManifestDefaultHandlerIsRespected() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandler" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// No routes are declared, so every request falls through to the default handler -
+		// which the manifest overrides to handlers/Special.bx#handle(), not Lambda.bx#run()
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/anything" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "manifest-declared default handler" );
+	}
 }

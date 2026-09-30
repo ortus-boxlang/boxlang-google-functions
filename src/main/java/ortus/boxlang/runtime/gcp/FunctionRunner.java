@@ -142,6 +142,16 @@ public class FunctionRunner implements HttpFunction {
 	 */
 	protected static final String						MANIFEST_FILE			= "manifest.json";
 
+	/**
+	 * The environment variable that opts a deployment out of the legacy, pre-handlers/
+	 * root-directory scan (used only when neither manifest.json nor handlers/ is present).
+	 * Shared, un-prefixed name across every BoxLang serverless runtime (AWS/GCP/Azure), so
+	 * one setting means the same thing everywhere. Defaults to enabled, matching prior
+	 * releases; set to "false" to restrict routing to the default handler only in that
+	 * fallback scenario.
+	 */
+	protected static final String						ENABLE_ROOT_SCAN_ENV	= "BOXLANG_ENABLE_ROOT_SCAN";
+
 	// =========================================================================
 	// Static state (shared across warm invocations)
 	// =========================================================================
@@ -226,6 +236,27 @@ public class FunctionRunner implements HttpFunction {
 	 */
 	protected final Map<String, Path>	handlerRoutes;
 
+	/**
+	 * Whether the legacy, pre-handlers/ root-directory scan is allowed when neither
+	 * manifest.json nor handlers/ is present. See {@link #ENABLE_ROOT_SCAN_ENV}.
+	 */
+	protected boolean					enableRootScan			= true;
+
+	/**
+	 * The handler class used when no URI route matches. Defaults to
+	 * {@link #defaultFunctionPath}, but a manifest.json {@code defaultHandler.file}
+	 * entry can override it.
+	 */
+	protected Path						defaultHandlerPath;
+
+	/**
+	 * The method invoked on {@link #defaultHandlerPath} when no route matches and no
+	 * {@code x-bx-function} header is present. Defaults to
+	 * {@link #DEFAULT_FUNCTION_METHOD}, but a manifest.json {@code defaultHandler.method}
+	 * entry can override it.
+	 */
+	protected Key						defaultHandlerMethod	= DEFAULT_FUNCTION_METHOD;
+
 	// =========================================================================
 	// Constructors
 	// =========================================================================
@@ -247,8 +278,34 @@ public class FunctionRunner implements HttpFunction {
 	 * @param debugMode    {@code true} to enable verbose logging
 	 */
 	public FunctionRunner( Path functionPath, boolean debugMode ) {
+		this( functionPath, debugMode, null );
+	}
+
+	/**
+	 * Constructor for tests that need explicit control over the legacy root-directory
+	 * scan without touching process environment variables.
+	 *
+	 * @param functionPath   The absolute path to the default {@code .bx} handler
+	 * @param debugMode      {@code true} to enable verbose logging
+	 * @param enableRootScan Overrides {@link #ENABLE_ROOT_SCAN_ENV}; null defers to the
+	 *                       environment variable (or its default of true) as usual
+	 */
+	public FunctionRunner( Path functionPath, boolean debugMode, Boolean enableRootScan ) {
 		this.defaultFunctionPath	= functionPath;
 		this.debugMode				= debugMode;
+
+		// Explicit constructor argument wins; otherwise fall back to the environment
+		// variable (default true, matching prior releases)
+		Map<String, String> envForRootScan = System.getenv();
+		if ( enableRootScan != null ) {
+			this.enableRootScan = enableRootScan;
+		} else if ( envForRootScan.get( ENABLE_ROOT_SCAN_ENV ) != null ) {
+			this.enableRootScan = Boolean.parseBoolean( envForRootScan.get( ENABLE_ROOT_SCAN_ENV ) );
+		}
+
+		// The default handler starts out as the conventional Lambda.bx; a manifest.json
+		// defaultHandler entry can override this during loadHandlerRoutes() below.
+		this.defaultHandlerPath = this.defaultFunctionPath;
 
 		// Derive the function root from the path when running under tests;
 		// otherwise read it from the environment.
@@ -336,7 +393,7 @@ public class FunctionRunner implements HttpFunction {
 
 		// --- Resolve the .bx class from the URI (falls back to Lambda.bx) ---
 		Path						resolvedClassPath	= resolveRoute( request.getPath() );
-		final Path					finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : this.defaultFunctionPath;
+		final Path					finalFunctionPath	= resolvedClassPath != null ? resolvedClassPath : this.defaultHandlerPath;
 		final ResolvedFilePath		resolvedFilePath	= ResolvedFilePath.of( finalFunctionPath );
 		final String				resolvedPathStr		= resolvedFilePath.absolutePath().toString();
 
@@ -346,8 +403,11 @@ public class FunctionRunner implements HttpFunction {
 		    false
 		);
 		RequestBoxContext.setCurrent( boxContext );
-		// Set up request threading context and application lifecycle
-		boxContext.loadApplicationDescriptor( FileSystemUtil.createFileUri( resolvedPathStr ) );
+		// Set up request threading context and application lifecycle. Application.bx always lives next to
+		// the root Lambda.bx, never inside handlers/, so we resolve it from the function root - not from
+		// whichever handler URI routing selected - or a routed handler would never see onRequestStart,
+		// datasources, or any other Application.bx setting.
+		boxContext.loadApplicationDescriptor( FileSystemUtil.createFileUri( this.defaultFunctionPath.toAbsolutePath().toString() ) );
 		RequestBoxContext		requestContext	= boxContext.getParentOfType( RequestBoxContext.class );
 		BaseApplicationListener	listener		= requestContext.getApplicationListener();
 
@@ -556,12 +616,17 @@ public class FunctionRunner implements HttpFunction {
 	 * Build the URI-routing table, once, at construction (cold start). Tries, in order:
 	 * <ol>
 	 * <li>manifest.json at the function root - the build-time-generated source of
-	 * truth. No filesystem scanning happens when this is present and valid.</li>
+	 * truth. No filesystem scanning happens when this is present and valid. Its
+	 * {@code reserved} list and {@code defaultHandler} entry are both honored (see
+	 * {@link #parseManifest}).</li>
 	 * <li>A one-time scan of the handlers/ directory, if manifest.json is missing or
 	 * invalid but the directory exists. Supports nested routes.</li>
 	 * <li>A one-time scan of the function root itself, for backward compatibility with
 	 * deployments that predate the handlers/ convention. Application.bx and the
-	 * configured default handler class are always excluded as routing targets.</li>
+	 * configured default handler class are always excluded as routing targets. This
+	 * tier only runs when {@link #enableRootScan} is true (the default); set
+	 * {@link #ENABLE_ROOT_SCAN_ENV} to {@code false} to restrict this fallback
+	 * scenario to the default handler only.</li>
 	 * </ol>
 	 * Tiers 2 and 3 log a warning listing every handler they registered, since silently
 	 * discovering routable classes from the filesystem is exactly the behavior this
@@ -587,9 +652,21 @@ public class FunctionRunner implements HttpFunction {
 		}
 
 		Path				handlersDir	= Path.of( this.functionRoot, HANDLERS_DIR );
-		Map<String, Path>	discovered	= handlersDir.toFile().isDirectory()
-		    ? scanHandlersDirectory( handlersDir, "" )
-		    : scanLegacyRoot();
+		Map<String, Path>	discovered;
+		if ( handlersDir.toFile().isDirectory() ) {
+			discovered = scanHandlersDirectory( handlersDir, "" );
+		} else if ( this.enableRootScan ) {
+			discovered = scanLegacyRoot();
+		} else {
+			discovered = new LinkedHashMap<>();
+			System.out.println(
+			    "[BoxLang GCP] No " + MANIFEST_FILE + " and no " + HANDLERS_DIR
+			        + "/ directory found, and " + ENABLE_ROOT_SCAN_ENV
+			        + " is false; only the default handler is reachable. Set " + ENABLE_ROOT_SCAN_ENV
+			        + "=true to restore the legacy root-directory scan."
+			);
+			return discovered;
+		}
 
 		System.out.println(
 		    "[BoxLang GCP] WARNING: no valid " + MANIFEST_FILE + " found; scanned and registered "
@@ -599,8 +676,11 @@ public class FunctionRunner implements HttpFunction {
 	}
 
 	/**
-	 * Parse manifest.json into a route key to Path map. Only the "handlers" object is
-	 * consulted; every other field is documentation for humans, not a security decision.
+	 * Parse manifest.json into a route key to Path map. As a side effect, applies any
+	 * {@code defaultHandler} override (falling back to the {@code Lambda.bx}/{@code run()}
+	 * convention when absent or invalid) and enforces the {@code reserved} filename list -
+	 * combined with the runtime's own built-in reserved names - against every handler
+	 * entry, and skips any entry whose {@code file} doesn't actually exist on disk.
 	 *
 	 * @param manifestPath The absolute path to manifest.json
 	 *
@@ -621,15 +701,83 @@ public class FunctionRunner implements HttpFunction {
 			throw new IllegalArgumentException( MANIFEST_FILE + " is missing a valid 'handlers' object" );
 		}
 
+		// Honor an explicit defaultHandler override before computing reserved names, so the
+		// reserved set always reflects whichever file is actually serving as the default.
+		applyManifestDefaultHandler( manifest );
+
+		Set<String>	reserved	= reservedFileNames();
+		Object		reservedObj	= manifest.get( Key.of( "reserved" ) );
+		if ( reservedObj instanceof Array reservedArray ) {
+			Set<String> merged = new java.util.HashSet<>( reserved );
+			for ( Object item : reservedArray ) {
+				merged.add( item.toString().toLowerCase() );
+			}
+			reserved = merged;
+		}
+
 		Map<String, Path> routes = new LinkedHashMap<>();
 		for ( Key routeKey : handlersStruct.keySet() ) {
 			Object entry = handlersStruct.get( routeKey );
 			if ( entry instanceof IStruct entryStruct && entryStruct.get( Key.of( "file" ) ) != null ) {
-				String relativeFile = entryStruct.get( Key.of( "file" ) ).toString();
-				routes.put( routeKey.getName().toLowerCase(), Path.of( this.functionRoot, relativeFile ).toAbsolutePath() );
+				String	relativeFile	= entryStruct.get( Key.of( "file" ) ).toString();
+				Path	resolvedFile	= Path.of( this.functionRoot, relativeFile ).toAbsolutePath();
+				String	leafName		= resolvedFile.getFileName().toString().toLowerCase();
+
+				if ( reserved.contains( leafName ) ) {
+					System.out.println(
+					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
+					        + "' to reserved file " + relativeFile + "; ignoring this entry"
+					);
+					continue;
+				}
+				if ( !resolvedFile.toFile().isFile() ) {
+					System.out.println(
+					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
+					        + "' to " + relativeFile + ", which does not exist; ignoring this entry"
+					);
+					continue;
+				}
+
+				routes.put( routeKey.getName().toLowerCase(), resolvedFile );
 			}
 		}
 		return routes;
+	}
+
+	/**
+	 * Apply manifest.json's {@code defaultHandler} entry, if present and valid, to
+	 * {@link #defaultHandlerPath} and {@link #defaultHandlerMethod}. Falls back to (and
+	 * leaves untouched) the {@code Lambda.bx}/{@code run()} convention when the entry is
+	 * absent, malformed, or points to a file that doesn't exist.
+	 *
+	 * @param manifest The parsed manifest.json root struct
+	 */
+	private void applyManifestDefaultHandler( IStruct manifest ) {
+		Object defaultHandlerObj = manifest.get( Key.of( "defaultHandler" ) );
+		if ( ! ( defaultHandlerObj instanceof IStruct defaultHandlerStruct ) ) {
+			return;
+		}
+
+		Object fileObj = defaultHandlerStruct.get( Key.of( "file" ) );
+		if ( fileObj == null ) {
+			return;
+		}
+
+		Path resolvedFile = Path.of( this.functionRoot, fileObj.toString() ).toAbsolutePath();
+		if ( !resolvedFile.toFile().isFile() ) {
+			System.out.println(
+			    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " defaultHandler.file " + fileObj
+			        + " does not exist; keeping the conventional default handler"
+			);
+			return;
+		}
+
+		this.defaultHandlerPath = resolvedFile;
+
+		Object methodObj = defaultHandlerStruct.get( Key.of( "method" ) );
+		if ( methodObj != null && !methodObj.toString().isBlank() ) {
+			this.defaultHandlerMethod = Key.of( methodObj.toString() );
+		}
 	}
 
 	/**
@@ -637,6 +785,8 @@ public class FunctionRunner implements HttpFunction {
 	 * relative path. Directory segments are taken as-is, lowercased for matching;
 	 * only the leaf .bx filename is expected to be PascalCase by convention.
 	 * "handlers/Api/Test.bx" and "handlers/api/Test.bx" both register as "api/test".
+	 * Reserved filenames (Application.bx, the default handler) are excluded even here,
+	 * in case one is ever misplaced inside handlers/.
 	 *
 	 * @param dir    The directory to scan
 	 * @param prefix The route-key prefix accumulated so far (empty at the top level)
@@ -650,11 +800,12 @@ public class FunctionRunner implements HttpFunction {
 			return routes;
 		}
 
+		Set<String> reserved = reservedFileNames();
 		for ( File entry : entries ) {
 			if ( entry.isDirectory() ) {
 				String subPrefix = prefix.isEmpty() ? entry.getName().toLowerCase() : prefix + "/" + entry.getName().toLowerCase();
 				routes.putAll( scanHandlersDirectory( entry.toPath(), subPrefix ) );
-			} else if ( entry.getName().toLowerCase().endsWith( ".bx" ) ) {
+			} else if ( entry.getName().toLowerCase().endsWith( ".bx" ) && !reserved.contains( entry.getName().toLowerCase() ) ) {
 				String	fileKey		= entry.getName().substring( 0, entry.getName().length() - 3 ).toLowerCase();
 				String	routeKey	= prefix.isEmpty() ? fileKey : prefix + "/" + fileKey;
 				routes.put( routeKey, entry.toPath().toAbsolutePath() );
@@ -666,9 +817,10 @@ public class FunctionRunner implements HttpFunction {
 	/**
 	 * Scan the function root itself for routable classes - the legacy, pre-handlers/
 	 * convention, kept only for backward compatibility with deployments that haven't
-	 * adopted the handlers/ directory yet. Flat only (no nesting), and Application.bx
-	 * plus the configured default handler class are always excluded: neither is ever a
-	 * legitimate URI-routing target, regardless of what's on disk.
+	 * adopted the handlers/ directory yet, and only run when {@link #enableRootScan} is
+	 * true. Flat only (no nesting), and Application.bx plus the configured default
+	 * handler class are always excluded: neither is ever a legitimate URI-routing
+	 * target, regardless of what's on disk.
 	 *
 	 * @return The route key to Path map
 	 */
@@ -692,14 +844,15 @@ public class FunctionRunner implements HttpFunction {
 	/**
 	 * Filenames that must never be treated as URI-routing targets, regardless of the
 	 * routing tier in use: the application descriptor and whichever file this instance
-	 * resolves as its default handler class (honoring BOXLANG_GCP_CLASS overrides).
+	 * currently resolves as its default handler (honoring both BOXLANG_GCP_CLASS
+	 * overrides and a manifest.json defaultHandler override).
 	 *
 	 * @return The set of lowercase reserved filenames
 	 */
 	private Set<String> reservedFileNames() {
 		return Set.of(
 		    "application.bx",
-		    this.defaultFunctionPath.getFileName().toString().toLowerCase()
+		    this.defaultHandlerPath.getFileName().toString().toLowerCase()
 		);
 	}
 
@@ -723,7 +876,7 @@ public class FunctionRunner implements HttpFunction {
 			}
 		}
 
-		return DEFAULT_FUNCTION_METHOD;
+		return this.defaultHandlerMethod;
 	}
 
 	/**
