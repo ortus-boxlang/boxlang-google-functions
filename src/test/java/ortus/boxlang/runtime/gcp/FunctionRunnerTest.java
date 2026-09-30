@@ -363,11 +363,11 @@ public class FunctionRunnerTest {
 	@Test
 	@DisplayName( "Application.bx onRequestStart fires for the default Lambda.bx handler" )
 	public void testApplicationLifecycleFiresForDefaultHandler() throws Exception {
-		Path			testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
-		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+		Path				testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
 
-		MockHttpRequest		req	= new MockHttpRequest( "GET", "/" );
-		MockHttpResponse	res	= new MockHttpResponse();
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/" );
+		MockHttpResponse	res			= new MockHttpResponse();
 		runner.service( req, res );
 
 		assertThat( res.getStatusCode() ).isEqualTo( 200 );
@@ -461,13 +461,13 @@ public class FunctionRunnerTest {
 	@Test
 	@DisplayName( "manifest.json defaultHandler.file/method is respected instead of the Lambda.bx/run() convention" )
 	public void testManifestDefaultHandlerIsRespected() throws Exception {
-		Path			testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandler" );
-		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+		Path				testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandler" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
 
 		// No routes are declared, so every request falls through to the default handler -
 		// which the manifest overrides to handlers/Special.bx#handle(), not Lambda.bx#run()
-		MockHttpRequest		req	= new MockHttpRequest( "GET", "/anything" );
-		MockHttpResponse	res	= new MockHttpResponse();
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/anything" );
+		MockHttpResponse	res			= new MockHttpResponse();
 		runner.service( req, res );
 
 		assertThat( res.getStatusCode() ).isEqualTo( 200 );

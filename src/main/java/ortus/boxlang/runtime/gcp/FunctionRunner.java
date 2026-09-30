@@ -240,7 +240,7 @@ public class FunctionRunner implements HttpFunction {
 	 * Whether the legacy, pre-handlers/ root-directory scan is allowed when neither
 	 * manifest.json nor handlers/ is present. See {@link #ENABLE_ROOT_SCAN_ENV}.
 	 */
-	protected boolean					enableRootScan	= true;
+	protected boolean					enableRootScan			= true;
 
 	/**
 	 * The handler class used when no URI route matches. Defaults to
@@ -705,10 +705,10 @@ public class FunctionRunner implements HttpFunction {
 		// reserved set always reflects whichever file is actually serving as the default.
 		applyManifestDefaultHandler( manifest );
 
-		Set<String>			reserved	= reservedFileNames();
-		Object				reservedObj	= manifest.get( Key.of( "reserved" ) );
+		Set<String>	reserved	= reservedFileNames();
+		Object		reservedObj	= manifest.get( Key.of( "reserved" ) );
 		if ( reservedObj instanceof Array reservedArray ) {
-			Set<String>	merged	= new java.util.HashSet<>( reserved );
+			Set<String> merged = new java.util.HashSet<>( reserved );
 			for ( Object item : reservedArray ) {
 				merged.add( item.toString().toLowerCase() );
 			}
@@ -794,8 +794,8 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The route key to Path map for this subtree
 	 */
 	private Map<String, Path> scanHandlersDirectory( Path dir, String prefix ) {
-		Map<String, Path>	routes		= new LinkedHashMap<>();
-		File[]				entries		= dir.toFile().listFiles();
+		Map<String, Path>	routes	= new LinkedHashMap<>();
+		File[]				entries	= dir.toFile().listFiles();
 		if ( entries == null ) {
 			return routes;
 		}
