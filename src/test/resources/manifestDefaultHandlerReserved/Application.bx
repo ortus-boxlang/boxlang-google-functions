@@ -1,0 +1,6 @@
+class{
+
+	function onApplicationStart(){
+		return true
+	}
+}

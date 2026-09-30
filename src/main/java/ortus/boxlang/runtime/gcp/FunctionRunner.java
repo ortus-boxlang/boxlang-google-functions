@@ -47,6 +47,7 @@ import ortus.boxlang.runtime.runnables.RunnableLoader;
 import ortus.boxlang.runtime.scopes.Key;
 import ortus.boxlang.runtime.types.Array;
 import ortus.boxlang.runtime.types.exceptions.AbortException;
+import ortus.boxlang.runtime.types.exceptions.BoxRuntimeException;
 import ortus.boxlang.runtime.types.exceptions.ExceptionUtil;
 import ortus.boxlang.runtime.types.IStruct;
 import ortus.boxlang.runtime.types.Struct;
@@ -151,6 +152,12 @@ public class FunctionRunner implements HttpFunction {
 	 * fallback scenario.
 	 */
 	protected static final String						ENABLE_ROOT_SCAN_ENV	= "BOXLANG_ENABLE_ROOT_SCAN";
+
+	/**
+	 * The lowercase filename of the application descriptor - never a valid routing
+	 * target or default handler, under any configuration.
+	 */
+	protected static final String						RESERVED_APPLICATION_BX	= "application.bx";
 
 	// =========================================================================
 	// Static state (shared across warm invocations)
@@ -643,11 +650,22 @@ public class FunctionRunner implements HttpFunction {
 				if ( fromManifest != null ) {
 					return fromManifest;
 				}
+			} catch ( ReservedHandlerException e ) {
+				// A reserved-handler misconfiguration is fatal and must never be papered
+				// over by falling back to a directory scan - rethrow to abort cold start.
+				throw e;
 			} catch ( Exception e ) {
+				// A present-but-corrupt manifest.json means this deployment explicitly opted
+				// into manifest-based routing and something went wrong producing it - that's a
+				// build/deploy error, not a signal to widen routing by falling back to a
+				// directory or legacy root scan. Restrict to the default handler only so the
+				// failure is safe rather than silently exposing more surface than intended.
 				System.err.println(
 				    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " found at " + manifestPath
-				        + " but could not be parsed (" + e.getMessage() + "); falling back to a directory scan"
+				        + " but could not be parsed (" + e.getMessage() + "); restricting routing to the "
+				        + "default handler only. Fix and redeploy " + MANIFEST_FILE + " to restore handlers/ routing."
 				);
+				return new LinkedHashMap<>();
 			}
 		}
 
@@ -720,9 +738,16 @@ public class FunctionRunner implements HttpFunction {
 			Object entry = handlersStruct.get( routeKey );
 			if ( entry instanceof IStruct entryStruct && entryStruct.get( Key.of( "file" ) ) != null ) {
 				String	relativeFile	= entryStruct.get( Key.of( "file" ) ).toString();
-				Path	resolvedFile	= Path.of( this.functionRoot, relativeFile ).toAbsolutePath();
+				Path	resolvedFile	= Path.of( this.functionRoot, relativeFile ).toAbsolutePath().normalize();
 				String	leafName		= resolvedFile.getFileName().toString().toLowerCase();
 
+				if ( !isWithinFunctionRoot( resolvedFile ) ) {
+					System.out.println(
+					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
+					        + "' to " + relativeFile + ", which resolves outside the function root; ignoring this entry"
+					);
+					continue;
+				}
 				if ( reserved.contains( leafName ) ) {
 					System.out.println(
 					    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " maps route '" + routeKey.getName()
@@ -763,7 +788,14 @@ public class FunctionRunner implements HttpFunction {
 			return;
 		}
 
-		Path resolvedFile = Path.of( this.functionRoot, fileObj.toString() ).toAbsolutePath();
+		Path resolvedFile = Path.of( this.functionRoot, fileObj.toString() ).toAbsolutePath().normalize();
+		if ( !isWithinFunctionRoot( resolvedFile ) ) {
+			System.out.println(
+			    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " defaultHandler.file " + fileObj
+			        + " resolves outside the function root; keeping the conventional default handler"
+			);
+			return;
+		}
 		if ( !resolvedFile.toFile().isFile() ) {
 			System.out.println(
 			    "[BoxLang GCP] WARNING: " + MANIFEST_FILE + " defaultHandler.file " + fileObj
@@ -771,6 +803,7 @@ public class FunctionRunner implements HttpFunction {
 			);
 			return;
 		}
+		assertNotReservedHandler( resolvedFile, MANIFEST_FILE + " defaultHandler.file" );
 
 		this.defaultHandlerPath = resolvedFile;
 
@@ -850,10 +883,61 @@ public class FunctionRunner implements HttpFunction {
 	 * @return The set of lowercase reserved filenames
 	 */
 	private Set<String> reservedFileNames() {
-		return Set.of(
-		    "application.bx",
-		    this.defaultHandlerPath.getFileName().toString().toLowerCase()
-		);
+		Set<String> reserved = new java.util.HashSet<>();
+		reserved.add( RESERVED_APPLICATION_BX );
+		reserved.add( this.defaultHandlerPath.getFileName().toString().toLowerCase() );
+		return reserved;
+	}
+
+	/**
+	 * Confines manifest.json-declared paths ({@code handlers[*].file} and
+	 * {@code defaultHandler.file}) to the function root, so a relative path containing
+	 * {@code ../} segments can never escape it to route to (and thus source-disclose or
+	 * execute) an arbitrary file elsewhere on the filesystem.
+	 *
+	 * @param candidate An already-normalized, absolute path to check
+	 *
+	 * @return true if candidate is the function root itself or a descendant of it
+	 */
+	private boolean isWithinFunctionRoot( Path candidate ) {
+		Path root = Path.of( this.functionRoot ).toAbsolutePath().normalize();
+		return candidate.equals( root ) || candidate.startsWith( root );
+	}
+
+	/**
+	 * Hard-aborts cold start if {@code candidate} resolves to a reserved filename
+	 * (currently only {@code Application.bx}). A reserved file can never serve as a
+	 * handler - default or routed - so configuring one as such is a fatal
+	 * misconfiguration: it must stop the deployment cold, not fall back silently and
+	 * leave a stale, unintended handler in effect.
+	 *
+	 * @param candidate The resolved path to check
+	 * @param source    A short description of where this path came from, used in the
+	 *                  error message (e.g. "manifest.json defaultHandler.file")
+	 *
+	 * @throws ReservedHandlerException If candidate is a reserved filename
+	 */
+	private void assertNotReservedHandler( Path candidate, String source ) {
+		String leafName = candidate.getFileName().toString().toLowerCase();
+		if ( leafName.equals( RESERVED_APPLICATION_BX ) ) {
+			throw new ReservedHandlerException(
+			    "[BoxLang GCP] FATAL: " + source + " is set to '" + candidate.getFileName()
+			        + "', which is a reserved filename and can never serve as a handler. "
+			        + "Application.bx is reserved for the BoxLang application lifecycle. Aborting cold start."
+			);
+		}
+	}
+
+	/**
+	 * Thrown when a reserved filename (currently only Application.bx) is configured as a
+	 * handler - a fatal misconfiguration distinct from ordinary manifest parse failures,
+	 * which fall back to a directory scan instead of aborting.
+	 */
+	public static class ReservedHandlerException extends BoxRuntimeException {
+
+		public ReservedHandlerException( String message ) {
+			super( message );
+		}
 	}
 
 	/**
