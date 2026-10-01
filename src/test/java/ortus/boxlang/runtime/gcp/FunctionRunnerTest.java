@@ -515,4 +515,58 @@ public class FunctionRunnerTest {
 		assertThat( res.getStatusCode() ).isEqualTo( 200 );
 		assertThat( res.getBody() ).contains( "conventional default lambda" );
 	}
+	// =========================================================================
+	// Response struct in onRequestEnd / onError, and the handled-error status
+	// =========================================================================
+
+	private static Path responseFixture( String name ) {
+		return Path.of( "src", "test", "resources", name, "Lambda.bx" );
+	}
+
+	private static String compact( String json ) {
+		return json.replaceAll( "\\s+", "" );
+	}
+
+	@Test
+	@DisplayName( "onRequestEnd receives the response struct and can wrap the body" )
+	public void testOnRequestEndCanWrapTheBody() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( compact( res.getBody() ) ).contains( "\"ok\":true" );
+		assertThat( compact( res.getBody() ) ).contains( "\"name\":\"Luis\"" );
+	}
+
+	@Test
+	@DisplayName( "A handled error defaults to 500 with the onError body, instead of a 200" )
+	public void testHandledErrorDefaultsTo500() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/fail" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 500 );
+		assertThat( compact( res.getBody() ) ).contains( "\"ok\":false" );
+		assertThat( compact( res.getBody() ) ).contains( "\"error\":\"boom\"" );
+	}
+
+	@Test
+	@DisplayName( "onError can override the default 500 status through the response struct" )
+	public void testOnErrorCanOverrideTheStatus() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/fail-missing" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 404 );
+	}
+
+	@Test
+	@DisplayName( "An unhandled error (no onError) still fails the invocation" )
+	public void testUnhandledErrorStillThrows() {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseNoOnError" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+
+		assertThrows( RuntimeException.class, () -> runner.service( new MockHttpRequest( "GET", "/" ), res ) );
+	}
 }
