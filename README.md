@@ -47,7 +47,7 @@ class {
 | Handle everything else | `Lambda.bx` at the root is the default handler for unmatched routes |
 | Call another method | Send the `x-bx-function: methodName` header (public or remote methods only) |
 | Run code on every request | Root `Application.bx`: `onApplicationStart` (cold start), `onRequestStart`, `onRequestEnd`, `onError` |
-| Wrap results and errors | `onRequestEnd( target, event, context, response )` and `onError( exception, eventName, event, context, response )`: set `response.body` |
+| Read the request and change the response in a hook | Every request hook gets `event` and `response`: `onRequestStart( target, event, context, response )`, `onRequestEnd( target, event, context, response )`, `onError( exception, eventName, event, context, response )`, `onAbort( target, event, context, response )`. Set `response.body` / `response.statusCode`. `onApplicationStart` and session hooks are fired by BoxLang core and get no request data |
 | Set status, headers, cookies | `response.statusCode`, `response.headers`, `response.cookies` |
 | Fail the invocation on an error | Do not define `onError`, or rethrow from it. A defined `onError` always counts as handled |
 
@@ -116,7 +116,7 @@ At cold start, the runtime builds a routing table once (never per request), in t
 
 The project's root `Application.bx` fires for **every** invocation — `onApplicationStart()` once per cold start, `onRequestStart()` before each request — regardless of whether `Lambda.bx` or a routed handler under `handlers/` ends up serving it. There's a single `Application.bx` per deployment, at the function root, never under `handlers/`.
 
-`run()`, `onRequestEnd` and `onError` all receive the same `response` struct as their last argument. A returned value is stored in `response.body` before `onRequestEnd` runs, so a hook can wrap it, and a handled error defaults to status `500` unless `onError` sets one:
+`run()` and every request lifecycle hook (`onRequestStart`, `onRequestEnd`, `onError`, `onAbort`) receive the same `response` struct as their last argument. A returned value is stored in `response.body` before `onRequestEnd` runs, so a hook can wrap it, and a handled error defaults to status `500` unless `onError` sets one:
 
 ```js
 class {

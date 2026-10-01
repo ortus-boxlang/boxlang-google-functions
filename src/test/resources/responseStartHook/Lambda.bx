@@ -1,0 +1,5 @@
+class{
+
+	function run( event, context, response ){
+	}
+}

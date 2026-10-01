@@ -431,7 +431,7 @@ public class FunctionRunner implements HttpFunction {
 			Key functionMethod = getFunctionMethod( eventStruct );
 
 			// Application lifecycle: onRequestStart
-			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+			listener.onRequestStart( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext, responseStruct } );
 
 			// Invoke the BoxLang handler method
 			functionResult = function.dereferenceAndInvoke(
@@ -454,7 +454,7 @@ public class FunctionRunner implements HttpFunction {
 			}
 
 			try {
-				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+				listener.onAbort( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext, responseStruct } );
 			} catch ( Throwable ae ) {
 				errorToHandle = ae;
 			}
