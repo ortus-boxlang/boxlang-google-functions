@@ -569,4 +569,25 @@ public class FunctionRunnerTest {
 
 		assertThrows( RuntimeException.class, () -> runner.service( new MockHttpRequest( "GET", "/" ), res ) );
 	}
+
+	@Test
+	@DisplayName( "onRequestStart receives the response struct, so it can set the status and body before the handler runs" )
+	public void testOnRequestStartCanWriteTheResponse() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseStartHook" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 202 );
+		assertThat( res.getBody() ).contains( "from-start" );
+	}
+
+	@Test
+	@DisplayName( "onAbort receives the response struct" )
+	public void testOnAbortReceivesTheResponse() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseAbortHook" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( compact( res.getBody() ) ).contains( "\"aborted\":true" );
+	}
 }

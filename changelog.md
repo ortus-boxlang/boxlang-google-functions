@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `response` struct is now passed as the last argument to the `Application.bx` `onRequestEnd` and `onError` hooks, and the handler's return value is assigned to `response.body` before `onRequestEnd`, so hooks can wrap or replace the body and set the status. Hooks that do not declare the extra argument are unaffected.
 - A handled error now defaults the response status to `500` unless `onError` sets one (it was `200`).
 - A present-but-corrupt `manifest.json` now restricts routing to the default handler only, instead of falling back to a `handlers/` or root-directory scan.
+- `onRequestStart` and `onAbort` now also receive the `response` struct as their last argument, so every request lifecycle hook (`onRequestStart`, `onRequestEnd`, `onError`, `onAbort`) can read the `event` and read or change the response (BL-2516).
 
 ### Fixed
 
