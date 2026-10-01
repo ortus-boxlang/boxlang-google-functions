@@ -1,0 +1,9 @@
+class{
+
+	function run( event, context, response ){
+		if ( findNoCase( "fail", event.path ) > 0 ) {
+			throw( message="boom", type="Custom" )
+		}
+		return { "id": 1, "name": "Luis" }
+	}
+}

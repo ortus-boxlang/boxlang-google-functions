@@ -1,0 +1,15 @@
+class{
+
+	this.name = "response-hooks-test"
+
+	function onRequestEnd( target, event, context, response ){
+		response.body = { "ok": true, "data": response.body }
+	}
+
+	function onError( exception, eventName, event, context, response ){
+		response.body = { "ok": false, "error": exception.message }
+		if ( findNoCase( "missing", event.path ) > 0 ) {
+			response.statusCode = 404
+		}
+	}
+}

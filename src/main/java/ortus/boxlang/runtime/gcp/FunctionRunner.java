@@ -441,6 +441,12 @@ public class FunctionRunner implements HttpFunction {
 			    false
 			);
 
+			// A returned value becomes the response body. This happens before onRequestEnd so
+			// that hook sees (and can wrap or replace) the body.
+			if ( functionResult != null ) {
+				responseStruct.put( Key.body, functionResult );
+			}
+
 		} catch ( AbortException e ) {
 
 			if ( debugMode ) {
@@ -467,7 +473,7 @@ public class FunctionRunner implements HttpFunction {
 
 			// Application lifecycle: onRequestEnd
 			try {
-				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext } );
+				listener.onRequestEnd( boxContext, new Object[] { resolvedPathStr, eventStruct, gcpContext, responseStruct } );
 			} catch ( Throwable e ) {
 				errorToHandle = e;
 			}
@@ -478,8 +484,12 @@ public class FunctionRunner implements HttpFunction {
 			if ( errorToHandle != null ) {
 				System.err.println( "[BoxLang GCP] Error: " + errorToHandle.getMessage() );
 
+				// A handled error must not look like a success: default the status to 500 and
+				// let onError override it (and the body) through the response struct.
+				responseStruct.put( Key.statusCode, 500 );
+
 				try {
-					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, gcpContext } ) ) {
+					if ( !listener.onError( boxContext, new Object[] { errorToHandle, "", eventStruct, gcpContext, responseStruct } ) ) {
 						throw errorToHandle;
 					}
 				} catch ( Throwable t ) {
@@ -489,11 +499,6 @@ public class FunctionRunner implements HttpFunction {
 			}
 
 			boxContext.flushBuffer( false );
-		}
-
-		// If the handler returned a value directly, place it in the body
-		if ( functionResult != null ) {
-			responseStruct.put( "body", functionResult );
 		}
 
 		if ( debugMode ) {
