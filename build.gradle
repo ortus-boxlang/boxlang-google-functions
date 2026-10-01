@@ -15,7 +15,7 @@ plugins {
     // Download task
     id "de.undercouch.download" version "5.7.0"
 	// Task visualizer
-	id "com.dorongold.task-tree" version "4.0.1"
+	id "com.dorongold.task-tree" version "4.0.2"
 	// Maven Publisher
 	id 'maven-publish'
 	id 'signing'
