@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-10-02
+
 ### Added
 
 - `BOXLANG_ENABLE_ROOT_SCAN` (shared across all serverless runtimes, default `true`): set to `false` to opt out of the legacy root-directory scan used when neither `manifest.json` nor `handlers/` is present, restricting routing to the default handler only.
@@ -45,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release
 
-[unreleased]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.17.0...HEAD
+[unreleased]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.17.0...v1.18.0
 [1.17.0]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/ortus-boxlang/boxlang-google-functions/compare/v1.14.0...v1.15.0
