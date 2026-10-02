@@ -286,4 +286,308 @@ public class FunctionRunnerTest {
 
 		assertThat( runner.getRuntime() ).isNotNull();
 	}
+
+	// =========================================================================
+	// Manifest / handlers routing
+	// =========================================================================
+
+	@Test
+	@DisplayName( "manifest.json is authoritative: routes what it lists, ignores what it doesn't" )
+	public void testManifestRoutingIsAuthoritative() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "Manifest-routed: Products handler" );
+
+		// Decoy.bx exists on disk (in handlers/) but is NOT listed in manifest.json:
+		// it must never be reachable, proving the manifest is the allowlist, not
+		// merely a hint that the handlers/ directory happens to exist.
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "decoy" );
+		assertThat( runner.resolveRoute( "/decoy" ) ).isNull();
+	}
+
+	@Test
+	@DisplayName( "handlers/ directory boot-scan supports nested, case-insensitive routes" )
+	public void testHandlersDirectoryNestedRouting() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "handlersRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// handlers/Api/Test.bx (mixed-case directory) registers as "api/test"
+		assertThat( runner.getHandlerRoutes() ).containsKey( "api/test" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/api/test" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "Nested handler: api/test" );
+	}
+
+	@Test
+	@DisplayName( "Application.bx and the default handler class are never routable targets" )
+	public void testReservedFilesNeverRouted() {
+		Path			testPath	= Path.of( "src", "test", "resources", "reservedRouting" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// Neither Application.bx nor Lambda.bx should ever appear in the routing table,
+		// even under the legacy root-scan fallback (no handlers/ or manifest.json here) -
+		// this is the exact scenario the reported vulnerability exploited:
+		// GET /application + x-bx-function: onApplicationStart
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "application" );
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "lambda" );
+		assertThat( runner.resolveRoute( "/application" ) ).isNull();
+	}
+
+	@Test
+	@DisplayName( "A corrupt manifest.json restricts routing to the default handler only, instead of widening to a directory scan" )
+	public void testCorruptManifestRestrictsToDefaultHandlerOnly() {
+		Path			testPath	= Path.of( "src", "test", "resources", "corruptManifest" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// manifest.json is invalid JSON, and a handlers/Foo.bx directory also exists - but a
+		// present-and-corrupt manifest.json is a build/deploy error, not license to widen
+		// routing by falling back to a directory scan. Only the default handler is reachable.
+		assertThat( runner.getHandlerRoutes() ).isEmpty();
+	}
+
+	// =========================================================================
+	// Application.bx lifecycle
+	// =========================================================================
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart fires for the default Lambda.bx handler" )
+	public void testApplicationLifecycleFiresForDefaultHandler() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
+
+	@Test
+	@DisplayName( "Application.bx onRequestStart also fires when URI routing dispatches to a handlers/ class" )
+	public void testApplicationLifecycleFiresForRoutedHandler() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "applicationLifecycle" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// Sanity check: the request really is being routed to handlers/Products.bx, not
+		// silently falling back to the default Lambda.bx
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		// Before the fix, Application.bx was looked up relative to handlers/, where it
+		// doesn't exist, so onRequestStart never fired and this would be false.
+		assertThat( res.getBody() ).contains( "\"applicationBxFired\" : true" );
+	}
+
+	// =========================================================================
+	// Opt-in legacy root scan
+	// =========================================================================
+
+	@Test
+	@DisplayName( "The legacy root-directory scan is on by default, matching prior releases" )
+	public void testRootScanEnabledByDefault() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "rootScanDisabled" );
+		// null = defer to BOXLANG_ENABLE_ROOT_SCAN, which defaults to true when unset
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true, null );
+
+		assertThat( runner.getHandlerRoutes() ).containsKey( "transport" );
+	}
+
+	@Test
+	@DisplayName( "BOXLANG_ENABLE_ROOT_SCAN=false restricts the no-manifest/no-handlers fallback to the default handler only" )
+	public void testRootScanCanBeDisabled() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "rootScanDisabled" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true, false );
+
+		// Transport.bx exists on disk at the root, but with root scanning disabled it must
+		// never become a routable target.
+		assertThat( runner.getHandlerRoutes() ).isEmpty();
+		assertThat( runner.resolveRoute( "/transport" ) ).isNull();
+		assertThat( runner.resolveRoute( "/TRANSPORT" ) ).isNull();
+
+		// With no route registered for /transport, this must fall back to the default
+		// handler (Lambda.bx), not reach Transport.bx.
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/transport" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "default lambda" );
+	}
+
+	// =========================================================================
+	// Manifest enforcement: reserved + defaultHandler
+	// =========================================================================
+
+	@Test
+	@DisplayName( "manifest.json cannot route to Application.bx, Lambda.bx, or its own declared reserved files" )
+	public void testManifestReservedListIsEnforced() throws Exception {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestReservedEnforced" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "application" );
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "lambda" );
+		// The manifest's own "reserved" array names Secret.bx, even though it's neither
+		// Application.bx nor the default handler
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "secret" );
+		assertThat( runner.resolveRoute( "/application" ) ).isNull();
+		assertThat( runner.resolveRoute( "/secret" ) ).isNull();
+
+		// A legitimate, non-reserved route from the same manifest still works
+		assertThat( runner.getHandlerRoutes() ).containsKey( "products" );
+
+		MockHttpRequest		req	= new MockHttpRequest( "GET", "/products" );
+		MockHttpResponse	res	= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file/method is respected instead of the Lambda.bx/run() convention" )
+	public void testManifestDefaultHandlerIsRespected() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandler" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// No routes are declared, so every request falls through to the default handler -
+		// which the manifest overrides to handlers/Special.bx#handle(), not Lambda.bx#run()
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/anything" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "manifest-declared default handler" );
+	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file pointing at Application.bx hard-aborts cold start" )
+	public void testManifestDefaultHandlerReservedHardAborts() {
+		Path									testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandlerReserved" );
+
+		FunctionRunner.ReservedHandlerException	thrown		= assertThrows(
+		    FunctionRunner.ReservedHandlerException.class,
+		    () -> new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true )
+		);
+		assertThat( thrown.getMessage() ).contains( "reserved" );
+		assertThat( thrown.getMessage() ).contains( "Application.bx" );
+	}
+
+	@Test
+	@DisplayName( "manifest.json handlers[*].file cannot escape the function root via ../ path traversal" )
+	public void testManifestHandlerPathTraversalIsRejected() {
+		Path			testPath	= Path.of( "src", "test", "resources", "manifestPathTraversal", "app" );
+		FunctionRunner	runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// The manifest declares "secret" -> "../outside/Secret.bx"; despite that file
+		// genuinely existing, it must never be registered as a route since it resolves
+		// outside the function root.
+		assertThat( runner.getHandlerRoutes() ).doesNotContainKey( "secret" );
+	}
+
+	@Test
+	@DisplayName( "manifest.json defaultHandler.file cannot escape the function root via ../ path traversal" )
+	public void testManifestDefaultHandlerPathTraversalIsRejected() throws Exception {
+		Path				testPath	= Path.of( "src", "test", "resources", "manifestDefaultHandlerTraversal", "app" );
+		FunctionRunner		runner		= new FunctionRunner( Path.of( testPath.toString(), "Lambda.bx" ), true );
+
+		// defaultHandler.file points outside the function root via ../ - the conventional
+		// Lambda.bx must remain in effect rather than the out-of-root Secret.bx
+		MockHttpRequest		req			= new MockHttpRequest( "GET", "/anything" );
+		MockHttpResponse	res			= new MockHttpResponse();
+		runner.service( req, res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( res.getBody() ).contains( "conventional default lambda" );
+	}
+	// =========================================================================
+	// Response struct in onRequestEnd / onError, and the handled-error status
+	// =========================================================================
+
+	private static Path responseFixture( String name ) {
+		return Path.of( "src", "test", "resources", name, "Lambda.bx" );
+	}
+
+	private static String compact( String json ) {
+		return json.replaceAll( "\\s+", "" );
+	}
+
+	@Test
+	@DisplayName( "onRequestEnd receives the response struct and can wrap the body" )
+	public void testOnRequestEndCanWrapTheBody() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 200 );
+		assertThat( compact( res.getBody() ) ).contains( "\"ok\":true" );
+		assertThat( compact( res.getBody() ) ).contains( "\"name\":\"Luis\"" );
+	}
+
+	@Test
+	@DisplayName( "A handled error defaults to 500 with the onError body, instead of a 200" )
+	public void testHandledErrorDefaultsTo500() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/fail" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 500 );
+		assertThat( compact( res.getBody() ) ).contains( "\"ok\":false" );
+		assertThat( compact( res.getBody() ) ).contains( "\"error\":\"boom\"" );
+	}
+
+	@Test
+	@DisplayName( "onError can override the default 500 status through the response struct" )
+	public void testOnErrorCanOverrideTheStatus() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseHooks" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/fail-missing" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 404 );
+	}
+
+	@Test
+	@DisplayName( "An unhandled error (no onError) still fails the invocation" )
+	public void testUnhandledErrorStillThrows() {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseNoOnError" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+
+		assertThrows( RuntimeException.class, () -> runner.service( new MockHttpRequest( "GET", "/" ), res ) );
+	}
+
+	@Test
+	@DisplayName( "onRequestStart receives the response struct, so it can set the status and body before the handler runs" )
+	public void testOnRequestStartCanWriteTheResponse() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseStartHook" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( res.getStatusCode() ).isEqualTo( 202 );
+		assertThat( res.getBody() ).contains( "from-start" );
+	}
+
+	@Test
+	@DisplayName( "onAbort receives the response struct" )
+	public void testOnAbortReceivesTheResponse() throws Exception {
+		FunctionRunner		runner	= new FunctionRunner( responseFixture( "responseAbortHook" ), true );
+		MockHttpResponse	res		= new MockHttpResponse();
+		runner.service( new MockHttpRequest( "GET", "/" ), res );
+
+		assertThat( compact( res.getBody() ) ).contains( "\"aborted\":true" );
+	}
 }

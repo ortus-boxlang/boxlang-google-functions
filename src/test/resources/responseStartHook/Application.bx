@@ -1,0 +1,9 @@
+class{
+
+	this.name = "response-start-hook-test"
+
+	function onRequestStart( target, event, context, response ){
+		response.statusCode = 202
+		response.body = "from-start"
+	}
+}

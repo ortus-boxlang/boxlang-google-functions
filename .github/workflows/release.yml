@@ -61,7 +61,7 @@ jobs:
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_TOKEN }}
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: "temurin"
           java-version: ${{ env.JDK }}
@@ -101,7 +101,7 @@ jobs:
           ./gradlew build -x test --stacktrace --console=plain
 
       - name: Commit Changelog [unreleased] with latest version
-        uses: EndBug/add-and-commit@v10.0.0
+        uses: EndBug/add-and-commit@v11.1.1
         if: env.SNAPSHOT == 'false'
         with:
           author_name: Github Actions
@@ -246,7 +246,7 @@ jobs:
           git pull
 
       - name: Commit Version Bump
-        uses: EndBug/add-and-commit@v10.0.0
+        uses: EndBug/add-and-commit@v11.1.1
         with:
           author_name: Github Actions
           author_email: info@ortussolutions.com

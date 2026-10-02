@@ -1,0 +1,8 @@
+class{
+
+	this.name = "response-abort-hook-test"
+
+	function onAbort( target, event, context, response ){
+		response.body = { "aborted": true }
+	}
+}

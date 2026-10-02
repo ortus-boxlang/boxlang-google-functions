@@ -12,6 +12,11 @@ on:
       - "releases/v*"
       - development
 
+# Cancel running builds if another push to the PR/branch is made while this build is running
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     permissions:
@@ -33,14 +38,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: "temurin"
           java-version: 21
-
-      - uses: Ortus-Solutions/commandbox-action@v1.0.3
-        with:
-          cmd: run-script format:check
 
       - name: Verify Code Formatting
         run: ./gradlew spotlessCheck
