@@ -14,6 +14,8 @@ plugins {
 	id "com.gradleup.shadow" version "9.6.1"
     // Download task
     id "de.undercouch.download" version "5.7.0"
+    // CycloneDX SBOM generation
+    id "org.cyclonedx.bom" version "2.3.1"
 	// Task visualizer
 	id "com.dorongold.task-tree" version "4.0.2"
 	// Maven Publisher
@@ -141,15 +143,16 @@ shadowJar {
 
  * @param file The file to generate the checksum for
  * @param algorithm The algorithm to use (e.g., "SHA-256", "MD5")
+ * @param extension Optional checksum file extension, defaults to the lowercased algorithm name
  */
-def generateChecksum( File file, String algorithm ) {
+def generateChecksum( File file, String algorithm, String extension = null ) {
 	def digest = java.security.MessageDigest.getInstance( algorithm )
 	file.eachByte( 4096 ) { bytes, size ->
 		digest.update( bytes, 0, size )
 	}
 	def checksum = digest.digest().collect { String.format( '%02x', it ) }.join()
 
-	def checksumFile = new File( file.parent, "${file.name}.${algorithm.toLowerCase()}" )
+	def checksumFile = new File( file.parent, "${file.name}.${extension ?: algorithm.toLowerCase()}" )
 	checksumFile.text = "${checksum}  ${file.name}\n"
 }
 
@@ -372,7 +375,25 @@ task buildTestZip( type: Zip ) {
 }
 shadowJar.finalizedBy( buildTestZip )
 
+/**
+ * CycloneDX SBOM
+ * Generated from the resolved runtime dependency graph, NOT from the shaded jar, because shading strips
+ * META-INF/maven and scanners cannot see the bundled dependencies. Test dependencies are excluded.
+ * Output: build/sbom/boxlang-google-functions-{version}.cdx.json
+ */
+tasks.named( "cyclonedxBom" ) {
+	includeConfigs = [ "runtimeClasspath" ]
+	projectType = "library"
+	schemaVersion = "1.6"
+	outputFormat = "json"
+	includeLicenseText = false
+	destination = layout.buildDirectory.dir( "sbom" ).get().asFile
+	outputName = "boxlang-google-functions-${version}.cdx"
+}
+
 task buildMainZip( type: Zip ) {
+	dependsOn cyclonedxBom
+
 	archiveFileName = "${project.name}-${version}.zip"
 	from 'src/main/resources/Lambda.bx'
 	// Include all .bx files from resources for URI routing
@@ -385,6 +406,11 @@ task buildMainZip( type: Zip ) {
 	}
 
 	doLast {
+		// SBOM ships beside the binaries, with a .sha256 checksum
+		def sbom = file( "build/distributions/boxlang-google-functions-${version}.cdx.json" )
+		Files.copy( file( "build/sbom/boxlang-google-functions-${version}.cdx.json" ).toPath(), sbom.toPath(), StandardCopyOption.REPLACE_EXISTING )
+		generateChecksum( sbom, 'SHA-256', 'sha256' )
+
 		// Generate checksums for all zip and jar files in distributions folder
 		file( "build/distributions" ).listFiles().each { file ->
 			if ( file.name.endsWith( '.zip' ) || file.name.endsWith( '.jar' ) ) {
