@@ -13,8 +13,10 @@ on:
       - development
 
 # Cancel running builds if another push to the PR/branch is made while this build is running
+# Share one group per branch for `push` and `pull_request`, so a push to a PR branch does not run twice:
+# the pull_request run cancels the push run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
