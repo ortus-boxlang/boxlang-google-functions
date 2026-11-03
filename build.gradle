@@ -15,7 +15,7 @@ plugins {
     // Download task
     id "de.undercouch.download" version "5.7.0"
     // CycloneDX SBOM generation
-    id "org.cyclonedx.bom" version "2.3.1"
+    id "org.cyclonedx.bom" version "3.5.1"
 	// Task visualizer
 	id "com.dorongold.task-tree" version "4.0.2"
 	// Maven Publisher
